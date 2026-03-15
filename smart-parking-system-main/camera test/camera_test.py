@@ -33,10 +33,10 @@ def simulate_slots_camera(camera_slots_data):
 
 if __name__ == "__main__":
     # الآن الطلبات ستمر عبر الـ Permission بنجاح
-    simulate_camera_entry("car.jpg", "Cairo 123")
-    simulate_camera_exit("car_exit.jpg", "Cairo 123")
-    simulate_slots_camera([
-        {"slot_id": "1", "is_occupied": True},
-        {"slot_id": "3", "is_occupied": True},
-        {"slot_id": "2", "is_occupied": False},
-    ])
+    simulate_camera_entry(r"camera test\car.jpg", "Cairo 123")
+    simulate_camera_exit(r"camera test\car_exit.jpg", "Cairo 123")
+    # simulate_slots_camera([
+    #     {"slot_id": "1", "is_occupied": True},
+    #     {"slot_id": "3", "is_occupied": True},
+    #     {"slot_id": "2", "is_occupied": False},
+    # ])

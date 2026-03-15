@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>Garage Navigation Simulator</title>
+    <style>
+        /* تأثير النبض للوجهة النهائية */
+@keyframes pulse-gold {
+    0% { box-shadow: 0 0 0 0 rgba(249, 226, 175, 0.7); }
+    70% { box-shadow: 0 0 0 15px rgba(249, 226, 175, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(249, 226, 175, 0); }
+}
+
+.cell.destination-slot {
+    background-color: #f9e2af !important; /* لون ذهبي */
+    color: #11111b !important;
+    font-weight: bold;
+    border: 2px solid #fab387;
+    animation: pulse-gold 2s infinite;
+    z-index: 10;
+}
+
+.cell.road-stop {
+    border: 2px dashed #fab387;
+    background-color: rgba(250, 179, 135, 0.2) !important;
+}
+        :root {
+            --bg-color: #1e1e2e;
+            --road-color: #313244;
+            --slot-color: #45475a;
+            --path-color: #fab387;
+            --text-color: #cdd6f4;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            background: #313244;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        #garage-container {
+            display: grid;
+            /* 6 أعمدة بناءً على مصفوفتك (0-5) */
+            grid-template-columns: repeat(6, 60px); 
+            gap: 4px;
+            background: #181825;
+            padding: 10px;
+            border-radius: 10px;
+            border: 2px solid #585b70;
+        }
+
+        .cell {
+            width: 60px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            border-radius: 4px;
+            background-color: var(--slot-color);
+            transition: all 0.3s ease;
+        }
+
+        /* أنواع الخلايا */
+        .cell.road { background-color: var(--road-color); color: #7f849c; }
+        .cell.wall { background-color: #11111b; color: #f38ba8; }
+        .cell.active-path { 
+            background-color: var(--path-color) !important; 
+            color: #11111b; 
+            font-weight: bold;
+            box-shadow: 0 0 10px var(--path-color);
+        }
+        .cell.entry-exit { background-color: #a6e3a1; color: #11111b; font-weight: bold; }
+        .cell.target { background-color: #f9e2af; color: #11111b; border: 2px solid #fab387; }
+
+        input, button {
+            padding: 8px;
+            border-radius: 4px;
+            border: none;
+            margin: 0 5px;
+        }
+        button { background: #89b4fa; cursor: pointer; font-weight: bold; }
+        button:hover { background: #b4befe; }
+    </style>
+</head>
+<body>
+
+    <h2>محاكي مسار الجراج (EA Tech)</h2>
+
+    <div class="controls">
+        <label>أدخل رقم السلوت (مثلاً A12):</label>
+        <input type="text" id="slotInput" placeholder="A12">
+        <button onclick="simulatePath()">عرض المسار</button>
+    </div>
+
+    <div id="garage-container">
+        </div>
+
+    <script>
+        // بيانات الـ API التي قدمتها (يمكنك استبدالها بجلب حقيقي لاحقاً)
+        const apiResponse = {
+            "slot_number": "A12",
+            "path": [
+                {"row": 0, "col": 1}, {"row": 1, "col": 1}, {"row": 1, "col": 2},
+                {"row": 1, "col": 3}, {"row": 1, "col": 4}, {"row": 2, "col": 4},
+                {"row": 3, "col": 4}, {"row": 4, "col": 4}, {"row": 5, "col": 4},
+                {"row": 6, "col": 4}, {"row": 7, "col": 4}, {"row": 8, "col": 4},
+                {"row": 9, "col": 4}, {"row": 10, "col": 4}, {"row": 11, "col": 4},
+                {"row": 12, "col": 4}
+            ]
+        };
+
+const rows = 52;
+const cols = 6;
+
+function createGrid() {
+    const container = document.getElementById('garage-container');
+    container.innerHTML = '';
+
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.id = `cell-${r}-${c}`;
+            
+            let isRoad = false;
+            let label = "";
+
+            // 1. تعريف الطرق (Roads)
+            if ((c === 1 || c === 4) && (r > 0 && r < 51)) {
+                isRoad = true;
+            }
+            // الممرات العرضية (صف 1 و 50) - أصبحت طرق الآن
+            if ((r === 1 || r === 50) && (c === 2 || c === 3)) {
+                isRoad = true;
+            }
+
+            // 2. تعريف المداخل والمخارج
+            if (r === 0 && c === 1) { 
+                label = 'ENTER'; 
+                cell.classList.add('entry-exit'); 
+            } else if (r === 51 && c === 1) { 
+                label = 'EXIT'; 
+                cell.classList.add('entry-exit'); 
+            } 
+            
+            // 3. تعريف السلوتات مع تصحيح أرقام الـ Offset
+            else if (c === 0 && r >= 1 && r <= 50) { 
+                label = 'A' + r; 
+            } 
+            else if (c === 2 && r >= 2 && r <= 17) { 
+                // نطرح 1 ليبدأ من B1 في الصف الثاني
+                label = 'B' + (r - 1); 
+            } 
+            else if (c === 3 && r >= 2 && r <= 17) { 
+                // نطرح 1 ليبدأ من C1 في الصف الثاني
+                label = 'C' + (r - 1); 
+            } 
+            else if (c === 5 && r >= 1 && r <= 45) { 
+                label = 'D' + r; 
+            }
+            
+            // 4. التنسيق النهائي
+            if (isRoad) {
+                cell.classList.add('road');
+                cell.innerText = '.';
+            } else if (label !== "") {
+                cell.innerText = label;
+                if (!cell.classList.contains('entry-exit')) {
+                    cell.style.backgroundColor = "var(--slot-color)";
+                }
+            } else {
+                cell.innerText = 'X';
+                cell.classList.add('wall');
+            }
+
+            container.appendChild(cell);
+        }
+    }
+}
+
+async function simulatePath() {
+    const slotNumber = document.getElementById('slotInput').value.trim();
+    if (!slotNumber) {
+        alert("من فضلك أدخل رقم السلوت أولاً (مثلاً D12)");
+        return;
+    }
+
+    // إعادة بناء الجريد لتنظيف المسارات القديمة
+    createGrid();
+
+    try {
+        // نرسل الطلب للـ API الخاصة بك
+        const response = await fetch(`http://127.0.0.1:8000/api/navigation/${slotNumber}/`, {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...', // ضع التوكن الخاص بك هنا
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('السلوت غير موجود أو هناك مشكلة في السيرفر');
+        }
+
+        const data = await response.json();
+        const path = data.path;
+const dest = data.destination;
+        const destCell = document.getElementById(`cell-${dest.row}-${dest.col}`);
+        if (destCell) {
+            destCell.classList.add('destination-slot');
+            destCell.innerText = "🎯 " + data.slot_number;
+        }
+
+        // 2. تحديد نقطة التوقف في الطريق (Road Stop)
+        const stop = data.road_stop;
+        const stopCell = document.getElementById(`cell-${stop.row}-${stop.col}`);
+        if (stopCell) {
+            stopCell.classList.add('road-stop');
+        }
+        // رسم المسار الجديد
+        path.forEach((step, index) => {
+            setTimeout(() => {
+                const cell = document.getElementById(`cell-${step.row}-${step.col}`);
+                if (cell) {
+                    cell.classList.add('active-path');
+                    cell.innerText = '🚗';
+                    
+                    // تلوين الهدف النهائي
+                    if (index === path.length - 1) {
+                        cell.classList.add('target');
+                        // تحديد خلية السلوت نفسها (سواء كانت في عمود 0 أو 5)
+                        const targetCol = (data.destination.col === 5) ? 5 : 0;
+                        const targetSlot = document.getElementById(`cell-${step.row}-${targetCol}`);
+                        if (targetSlot) targetSlot.classList.add('target');
+                    }
+                }
+            }, index * 100); 
+        });
+
+    } catch (error) {
+        console.error("Error:", error);
+        alert("فشل جلب المسار: " + error.message);
+    }
+}
+        // تشغيل الجريد عند التحميل
+        createGrid();
+    </script>
+</body>
+</html>

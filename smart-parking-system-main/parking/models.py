@@ -18,14 +18,23 @@ class ParkingSlot(models.Model):
     slot_number = models.CharField(max_length=10, unique=True) # رقم المكان (مثلاً A1, A2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='available')
     slot_type = models.CharField(max_length=20, choices=SLOT_TYPES, default='regular')
-    
+
     # الإحداثيات لو حابب ترسمها على خريطة في الموبايل مستقبلاً
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
+    floor = models.IntegerField(default=1)  # إضافة حقل الطابق
+
+
+
+    # **إحداثيات الـ grid**
+    row = models.PositiveIntegerField(help_text="Grid row index for navigation")
+    col = models.PositiveIntegerField(help_text="Grid column index for navigation")
+
+    class Meta:
+        ordering = ['floor', 'row', 'col']  # ترتيب احترافي عند الاستعلام
 
     def __str__(self):
-        return f"Slot {self.slot_number} - {self.status}"
-
+        return f"Slot {self.slot_number} - {self.status} (Row {self.row}, Col {self.col})"
 class VehicleLog(models.Model):
     license_plate = models.CharField(max_length=20) # رقم اللوحة اللي هيطلع من الـ ML
     

@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import VehicleEntryAPIView
+from .views import VehicleEntryAPIView, navigation_view
 from .views import VehicleExitAPIView
 from .views import BulkSlotUpdateAPIView
 from .views import ParkingStatusAPIView
@@ -14,4 +14,7 @@ urlpatterns = [
     path('api/status/summary/', ParkingStatusAPIView.as_view(), name='parking-summary'),
     path('api/slots/', ParkingSlotListAPIView.as_view(), name='slot-list-mobile'),
     path('api/reserve/', CreateReservationAPIView.as_view(), name='create-reservation'),
+    
+    path('api/navigation/<str:slot_number>/', navigation_view),
+
 ]

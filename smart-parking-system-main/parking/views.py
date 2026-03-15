@@ -5,9 +5,14 @@ from rest_framework.views import APIView
 from rest_framework import permissions
 from rest_framework import status
 
+from django.http import JsonResponse
 from .serializers import VehicleEntrySerializer, VehicleExitSerializer, SlotDisplaySerializer, ReservationSerializer
 from .permissions import IsCameraNode, IsOwnerOrAdmin
 from .models import ParkingSlot, VehicleLog, Reservation
+from .pathfinding import astar, get_road_cell_next_to_slot
+from .grid import GARAGE_GRID, SLOT_COORDINATES
+
+ENTRANCE = (0, 1)   # ENTER cell
 from django.db.models import Count
 from django.utils import timezone
 from decimal import Decimal
@@ -128,3 +133,47 @@ class CreateReservationAPIView(APIView):
                 "slot": slot.slot_number
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+def navigation_view(request, slot_number: str):
+
+    slot_number = slot_number.upper().strip()
+
+    # ── 1. Validate slot exists ───────────────────────────────
+    if slot_number not in SLOT_COORDINATES:
+        return JsonResponse(
+            {"error": f"Slot '{slot_number}' not found."},
+            status=404
+        )
+
+    slot_row, slot_col = SLOT_COORDINATES[slot_number]
+
+    # ── 2. Find the road cell next to this slot ───────────────
+    road_stop = get_road_cell_next_to_slot(slot_row, slot_col)
+
+    if road_stop is None:
+        return JsonResponse(
+            {"error": f"No accessible road cell next to '{slot_number}'."},
+            status=500
+        )
+
+    # ── 3. Run A* on road cells only ─────────────────────────
+    path = astar(ENTRANCE, road_stop)
+
+    if not path:
+        return JsonResponse(
+            {"error": f"No path found to '{slot_number}'."},
+            status=400
+        )
+
+    # ── 4. Return response ────────────────────────────────────
+    return JsonResponse({
+        "slot_number"  : slot_number,
+        "entrance"     : {"row": ENTRANCE[0],   "col": ENTRANCE[1]},
+        "road_stop"    : {"row": road_stop[0],  "col": road_stop[1]},
+        "destination"  : {"row": slot_row,      "col": slot_col},
+        "total_steps"  : len(path),
+        "path"         : [
+            {"row": r, "col": c} for r, c in path
+        ],
+    })
