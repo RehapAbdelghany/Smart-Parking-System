@@ -14,7 +14,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'fallback-secret-key')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 CAMERA_SECRET_KEY = os.getenv('CAMERA_SECRET_KEY')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 # ===== APPS =====
 INSTALLED_APPS = [

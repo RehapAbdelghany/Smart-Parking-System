@@ -1,3 +1,8 @@
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+
+import '../models/parking_slot.dart' as model;
+
 class DiagonalParkingSlot extends StatelessWidget {
   final model.ParkingSlot slot;
   final bool isLeftSkew;
