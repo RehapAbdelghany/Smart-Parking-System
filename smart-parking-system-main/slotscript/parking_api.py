@@ -11,7 +11,7 @@ from ultralytics import YOLO
 # --- إعدادات ---
 DJANGO_API_URL = "http://127.0.0.1:8000/api/slots/update/"
 HEADERS = {'X-Camera-Key': 'my_ultra_secure_camera_token_2026'}
-model = YOLO('yolov8n.pt') 
+model = YOLO('model/best.pt') 
 process = psutil.Process(os.getpid())
 
 # الحجم اللي هنشتغل عليه طول الوقت (عشان السرعة)
