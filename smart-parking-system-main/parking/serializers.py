@@ -1,16 +1,20 @@
 from rest_framework import serializers
 from .models import VehicleLog, ParkingSlot, Reservation
 
-
 class VehicleEntrySerializer(serializers.ModelSerializer):
+    # استقبال البصمة كقائمة أرقام (للقراءة فقط من جانب السيرفر)
+    car_embedding = serializers.ListField(child=serializers.FloatField(), write_only=True)
+    
     class Meta:
         model = VehicleLog
-        # نحدد الحقول التي سترسلها الكاميرا
-        fields = ['license_plate', 'entry_image']
-        
-    def create(self, validated_data):
-        # هنا يمكنك إضافة Logic إضافي قبل الحفظ (مثل التأكد من القوائم السوداء)
-        return super().create(validated_data)
+        fields = ['license_plate','entry_image', 'car_embedding', 'car_color']
+        extra_kwargs = {
+            'car_color': {'default': 'unknown', 'required': False}
+        }
+
+    def validate_license_plate(self, value):
+        # تنظيف رقم اللوحة: حروف كبيرة وبدون مسافات
+        return value.strip().upper().replace(" ", "")
 
 class VehicleExitSerializer(serializers.Serializer):
     license_plate = serializers.CharField(max_length=20)
@@ -47,3 +51,8 @@ class ReservationSerializer(serializers.ModelSerializer):
         if data['slot'].status != 'available':
             raise serializers.ValidationError("هذا المكان لم يعد متاحاً للحجز.")
         return data
+
+class VehicleTrackSerializer(serializers.Serializer):
+    car_embedding = serializers.ListField(child=serializers.FloatField(), write_only=True)
+    camera_id = serializers.CharField()
+    car_color = serializers.CharField(max_length=30, required=False, default='unknown')

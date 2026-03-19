@@ -5,8 +5,10 @@ from .views import BulkSlotUpdateAPIView
 from .views import ParkingStatusAPIView
 from .views import ParkingSlotListAPIView
 from .views import CreateReservationAPIView
+from .views import VehicleTrackingAPIView
 
 urlpatterns = [
+
     path('api/entry/', VehicleEntryAPIView.as_view(), name='vehicle-entry'),
     path('api/exit/', VehicleExitAPIView.as_view(), name='vehicle-exit'),
     path('api/slots/update/', BulkSlotUpdateAPIView.as_view(), name='bulk-slot-update'),
@@ -16,5 +18,6 @@ urlpatterns = [
     path('api/reserve/', CreateReservationAPIView.as_view(), name='create-reservation'),
     
     path('api/navigation/<str:slot_number>/', navigation_view),
+    path('api/tracking/', VehicleTrackingAPIView.as_view(), name='vehicle-tracking'),
 
 ]

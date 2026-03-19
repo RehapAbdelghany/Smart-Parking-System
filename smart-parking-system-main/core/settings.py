@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     'parking',
     'accounts',
     'administration',
+    'pgvector',
 ]
 
 # ===== MIDDLEWARE =====

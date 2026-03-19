@@ -1,6 +1,6 @@
 from django.db import models
-
-# Create your models here.
+from pgvector.django import VectorField
+from django.contrib.postgres.fields import ArrayField
 from django.contrib.auth.models import User
 
 class ParkingSlot(models.Model):
@@ -35,6 +35,17 @@ class ParkingSlot(models.Model):
 
     def __str__(self):
         return f"Slot {self.slot_number} - {self.status} (Row {self.row}, Col {self.col})"
+    
+
+class Camera(models.Model):
+    camera_id = models.CharField(max_length=50, unique=True)
+    zone_name = models.CharField(max_length=100)
+    # إحداثيات الكاميرا في الـ Grid لتحديث نقطة بداية الـ A*
+    row = models.PositiveIntegerField()
+    col = models.PositiveIntegerField()
+
+    def __str__(self):
+            return f"Camera {self.camera_id} - Zone {self.zone_name}"
 class VehicleLog(models.Model):
     license_plate = models.CharField(max_length=20) # رقم اللوحة اللي هيطلع من الـ ML
     
@@ -51,11 +62,29 @@ class VehicleLog(models.Model):
     total_fee = models.DecimalField(max_digits=8, decimal_places=2, default=0.0)
     is_paid = models.BooleanField(default=False)
 
+    # حقل الـ Embedding الاحترافي (128 أو 512 هو الطول الشائع لنماذج الـ Re-ID)
+    # نستخدم VectorField من pgvector للبحث السريع
+    # car_embedding = VectorField(dimensions=128, null=True, blank=True)
+    car_embedding = models.JSONField(null=True, blank=True)
+    # تخزين لون السيارة كفلتر إضافي (Metadata)
+    car_color = models.CharField(max_length=30, null=True, blank=True)
+    # ربط السيارة بآخر كاميرا رصدتها (التتبع اللحظي)
+    last_camera = models.ForeignKey(Camera, on_delete=models.SET_NULL, null=True, blank=True)
+    # هل السيارة حالياً داخل الموقف؟ (لتحسين سرعة البحث)
+    is_inside = models.BooleanField(default=True)
+    last_seen = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            # إنشاء فحص (Index) لنوع البحث عن المتجهات (HNSW أو IVFFLAT) لتحقيق سرعة خارقة
+            models.Index(fields=['is_inside', 'last_seen']),
+        ]
     def __str__(self):
         return f"{self.license_plate} - {self.entry_time.strftime('%Y-%m-%d %H:%M')}"
 
 class Reservation(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
+    license_plate = models.CharField(max_length=20, verbose_name="رقم اللوحة")
     slot = models.ForeignKey(ParkingSlot, on_delete=models.CASCADE)
     reservation_code = models.CharField(max_length=10, unique=True) # كود يكتبه عند الدخول
     start_time = models.DateTimeField()
