@@ -420,13 +420,16 @@ class _BookingPageState extends State<BookingPage> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: ElevatedButton(
+                                    // ابحث عن الـ Confirm button onPressed وغيّره لده:
                                     onPressed: () {
-
+                                      Navigator.pop(context); // اقفل الـ Dialog
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) =>
-                                              PaymentPage(hours: summary['duration']),
+                                          builder: (_) => PaymentPage(
+                                            hours: summary['duration'],
+                                            slotId: widget.slotId, // ✅ مرر الـ slotId
+                                          ),
                                         ),
                                       );
                                     },

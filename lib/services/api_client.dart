@@ -13,7 +13,7 @@ class ApiClient {
   })  : _dio = dio ??
       Dio(
         BaseOptions(
-          baseUrl: 'http://192.168.1.9:8000/api', // تأكدي إن ده IP السيرفر لو بتجربي من موبايل حقيقي
+          baseUrl: 'http://192.168.1.8:8000/api', // تأكدي إن ده IP السيرفر لو بتجربي من موبايل حقيقي
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 20),
           contentType: 'application/json',
@@ -104,7 +104,7 @@ class ApiClient {
     final refresh = await _storage.readRefreshToken();
     if (refresh == null || refresh.isEmpty) return null;
 
-    final refreshDio = Dio(BaseOptions(baseUrl: 'http://127.0.0.1:8000/api/auth'));
+    final refreshDio = Dio(BaseOptions(baseUrl: 'http://192.168.1.8:8000/api/auth'));
 
     try {
       final response = await refreshDio.post('/token/refresh/', data: {'refresh': refresh});

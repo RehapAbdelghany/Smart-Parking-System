@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/payment_provider.dart';
+import 'navigation_page.dart';
 
 class PaymentPage extends StatefulWidget {
   final int hours;
-  const PaymentPage({super.key, required this.hours});
+  final String slotId; // ✅ أضفنا slotId
+
+  const PaymentPage({
+    super.key,
+    required this.hours,
+    required this.slotId,
+  });
 
   @override
   State<PaymentPage> createState() => _PaymentPageState();
@@ -71,8 +78,8 @@ class _PaymentPageState extends State<PaymentPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text("Hours",
-                            style:
-                                TextStyle(fontSize: 16, color: Color(0xFF333333))),
+                            style: TextStyle(
+                                fontSize: 16, color: Color(0xFF333333))),
                         Text(
                           widget.hours.toString(),
                           style: const TextStyle(
@@ -87,8 +94,8 @@ class _PaymentPageState extends State<PaymentPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text("Price per hour",
-                            style:
-                                TextStyle(fontSize: 16, color: Color(0xFF333333))),
+                            style: TextStyle(
+                                fontSize: 16, color: Color(0xFF333333))),
                         Text(
                           "${provider.pricePerHour.toStringAsFixed(2)} EGP",
                           style: const TextStyle(
@@ -155,7 +162,8 @@ class _PaymentPageState extends State<PaymentPage> {
                         "expiry": visaExpiryController.text,
                         "cvv": visaCvvController.text,
                         "hours": widget.hours,
-                        "totalPrice": provider.totalPriceForHours(widget.hours),
+                        "totalPrice":
+                        provider.totalPriceForHours(widget.hours),
                       };
                     } else if (selectedMethod == "Mastercard") {
                       paymentData = {
@@ -165,12 +173,21 @@ class _PaymentPageState extends State<PaymentPage> {
                         "expiry": masterExpiryController.text,
                         "cvv": masterCvvController.text,
                         "hours": widget.hours,
-                        "totalPrice": provider.totalPriceForHours(widget.hours),
+                        "totalPrice":
+                        provider.totalPriceForHours(widget.hours),
                       };
                     }
 
                     Provider.of<PaymentProvider>(context, listen: false)
                         .processPayment(paymentData);
+
+                    // ✅ بعد الدفع روح على NavigationPage
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => NavigationPage(slotId: widget.slotId),
+                      ),
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF00A896),
@@ -236,9 +253,12 @@ class _PaymentPageState extends State<PaymentPage> {
               _inputField("Card Holder Name", visaHolderController),
               Row(
                 children: [
-                  Expanded(child: _inputField("Expiry MM/YY", visaExpiryController)),
+                  Expanded(
+                      child: _inputField(
+                          "Expiry MM/YY", visaExpiryController)),
                   const SizedBox(width: 10),
-                  Expanded(child: _inputField("CVV", visaCvvController)),
+                  Expanded(
+                      child: _inputField("CVV", visaCvvController)),
                 ],
               ),
             ],
@@ -253,9 +273,12 @@ class _PaymentPageState extends State<PaymentPage> {
               _inputField("Card Holder Name", masterHolderController),
               Row(
                 children: [
-                  Expanded(child: _inputField("Expiry MM/YY", masterExpiryController)),
+                  Expanded(
+                      child: _inputField(
+                          "Expiry MM/YY", masterExpiryController)),
                   const SizedBox(width: 10),
-                  Expanded(child: _inputField("CVV", masterCvvController)),
+                  Expanded(
+                      child: _inputField("CVV", masterCvvController)),
                 ],
               ),
             ],
