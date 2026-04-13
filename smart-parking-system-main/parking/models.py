@@ -64,7 +64,7 @@ class VehicleLog(models.Model):
 
     # حقل الـ Embedding الاحترافي (128 أو 512 هو الطول الشائع لنماذج الـ Re-ID)
     # نستخدم VectorField من pgvector للبحث السريع
-    # car_embedding = VectorField(dimensions=128, null=True, blank=True)
+    car_embedding = VectorField(dimensions=128, null=True, blank=True)
     car_embedding = models.JSONField(null=True, blank=True)
     # تخزين لون السيارة كفلتر إضافي (Metadata)
     car_color = models.CharField(max_length=30, null=True, blank=True)
