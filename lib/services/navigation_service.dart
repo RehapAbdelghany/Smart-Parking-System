@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class NavigationService {
-  final String baseUrl = 'http://192.168.1.8:8000';
+  final String baseUrl = 'http://192.168.1.100:8000';
   
   Future<NavigationData> fetchNavigation(String slotNumber) async {
     // ✅ الـ URL الصح بتاع الـ Backend
