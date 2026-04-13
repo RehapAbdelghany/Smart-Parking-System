@@ -220,4 +220,21 @@ JSON
 ```
 
 
+GET
 
+http://127.0.0.1:8000/api/my-car-location/ABC/
+
+**Response (200 OK):**
+JSON
+
+```
+{
+    "license_plate": "ABC",
+    "current_position": {
+        "row": 0,
+        "col": 0,
+        "zone": "A"
+    },
+    "last_seen": "17:01:11"
+}
+```
