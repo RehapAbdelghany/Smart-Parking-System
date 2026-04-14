@@ -1,44 +1,74 @@
 # ML
-#### Enter API
+## Enter API
+
 http://127.0.0.1:8000/api/entry/
+
 POST Request
 multipart/form-data
-```
+
 	`license_plate` -> String
-	`entry_image` ->File (Image)
-	`camera_id` ->Integer
-```
+	`entry_image` -> File (Image)
+	`car_embedding` -> Array/List
+	`car_color` -> String (Optional)
+	`camera_id` -> Integer
 
-	
 Response
-```
+
 {
+
     `"status": "success",`
-    `"message": "Vehicle entry recorded",`
     `"log_id": 45,`
-    `"entry_time": "2024-05-20T14:30:00Z"`
+    `"identified_user": "Omar Ahmed",`
+    `"target_slot": "A1",`
+    `"entry_time": "2026-03-19T14:30:00Z",`
+    `"message": "تم تسجيل الدخول وتخصيص مكان بنجاح"`
 }
-```
-___
-#### Exit API
+
+# Track API
+
+http://127.0.0.1:8000/api/track/
+
+POST Request
+application/json
+
+	`car_embedding` -> Array
+	`camera_id` -> String / Integer
+	`car_color` -> String
+
+Response
+
+{
+
+    "status": "success",
+    "identified_plate": "ABC 123",
+    "confidence_score": 0.145,
+    "current_zone": "Zone B - Ground Floor",
+    "message": "Vehicle ABC 123 tracked at Zone B"
+}
+# Exit API
+
 http://127.0.0.1:8000/api/exit/
+
 POST Request
 multipart/form-data
-```
-	`license_plate`: (String)
-	`exit_image`: (File)
-```
+
+	`license_plate` -> String
+	`exit_image` -> File (Image)
 
 Response
-```
+
 {
-    `"status": "success",`
-    `"entry_time": "2024-05-20T10:00:00Z",`
-    `"exit_time": "2024-05-20T14:30:00Z",`
-    `"duration_hours": 4.5,`
-    `"total_fee": 45.00`
+
+    "status": "success",
+    "message": "Vehicle exit recorded successfully",
+    "summary": {
+        "plate": "ABC 123",
+        "entry_time": "2026-03-19T10:00:00Z",
+        "exit_time": "2026-03-19T14:30:00Z",
+        "duration_hours": 5,
+        "total_fee": 125.00
+    }
 }
-```
 ___
 
 #### Slots Update API (Bulk)
@@ -190,4 +220,21 @@ JSON
 ```
 
 
+GET
 
+http://127.0.0.1:8000/api/my-car-location/ABC/
+
+**Response (200 OK):**
+JSON
+
+```
+{
+    "license_plate": "ABC",
+    "current_position": {
+        "row": 0,
+        "col": 0,
+        "zone": "A"
+    },
+    "last_seen": "17:01:11"
+}
+```

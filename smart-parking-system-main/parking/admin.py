@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import ParkingSlot, VehicleLog, Reservation
+from .models import ParkingSlot, VehicleLog, Reservation, Camera 
 
 @admin.register(ParkingSlot)
 class ParkingSlotAdmin(admin.ModelAdmin):
@@ -18,4 +18,5 @@ class VehicleLogAdmin(admin.ModelAdmin):
     # البحث برقم اللوحة
     search_fields = ('license_plate',)
 
+admin.site.register(Camera)
 admin.site.register(Reservation)
