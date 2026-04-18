@@ -23,14 +23,12 @@ class ParkingRepository {
     }
   }
 
-  // تم تعديل الدالة هنا لاستقبال floor
   Future<List<ParkingSlot>> fetchSlots({String? status, String? floor}) async {
     try {
       final Response<dynamic> response = await _apiClient.get<dynamic>(
         '/slots/',
         queryParameters: <String, dynamic>{
           if (status != null && status.isNotEmpty) 'status': status,
-          // إرسال الدور المختار للسيرفر
           if (floor != null && floor.isNotEmpty) 'floor': floor,
         },
       );
@@ -46,6 +44,33 @@ class ParkingRepository {
     } on DioException catch (e) {
       throw Exception(
           _extractErrorMessage(e, fallback: 'Failed to load parking slots'));
+    }
+  }
+
+  // ✅ NEW: حجز Slot
+  Future<Map<String, dynamic>> reserveSlot({
+    required int slotId,
+    required String licensePlate,
+    required DateTime startTime,
+    required DateTime endTime,
+  }) async {
+    try {
+      final Response<dynamic> response = await _apiClient.post<dynamic>(
+        '/reserve/',
+        data: {
+          'slot': slotId,
+          'license_plate': licensePlate,
+          'start_time': startTime.toIso8601String(),
+          'end_time': endTime.toIso8601String(),
+        },
+      );
+      if (response.statusCode == 201 && response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      throw Exception('Failed to reserve slot (${response.statusCode})');
+    } on DioException catch (e) {
+      throw Exception(
+          _extractErrorMessage(e, fallback: 'Failed to reserve slot'));
     }
   }
 

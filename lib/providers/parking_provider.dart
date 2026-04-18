@@ -6,7 +6,7 @@ import '../repositories/parking_repository.dart';
 class ParkingProvider extends ChangeNotifier {
   ParkingProvider(this._parkingRepository) {
     loadSummary();
-    loadSlots(floor: '0'); // التحميل الافتراضي للدور الأرضي
+    loadSlots(floor: '0');
   }
 
   final ParkingRepository _parkingRepository;
@@ -17,8 +17,12 @@ class ParkingProvider extends ChangeNotifier {
   List<ParkingSlot> _slots = <ParkingSlot>[];
   bool _isSlotsLoading = false;
 
-  String _selectedFloor = '0'; // '0' للجراوند، '1' للدور الأول، '2' للثاني
+  String _selectedFloor = '0';
   String? _selectedSlotId;
+
+  // ✅ NEW: Reservation state
+  bool _isReserving = false;
+  String? _reservationError;
 
   // Getters
   ParkingSummary? get summary => _summary;
@@ -27,11 +31,12 @@ class ParkingProvider extends ChangeNotifier {
   bool get isSlotsLoading => _isSlotsLoading;
   String get selectedFloor => _selectedFloor;
   String? get selectedSlotId => _selectedSlotId;
+  bool get isReserving => _isReserving;
+  String? get reservationError => _reservationError;
 
-  // تغيير الدور وتحميل بياناته
   void setFloor(String floor) {
     _selectedFloor = floor;
-    _selectedSlotId = null; // مسح الاختيار عند تغيير الدور
+    _selectedSlotId = null;
     loadSlots(floor: floor);
     notifyListeners();
   }
@@ -53,7 +58,6 @@ class ParkingProvider extends ChangeNotifier {
     _isSlotsLoading = true;
     notifyListeners();
     try {
-      // نرسل الدور للـ API (تأكدي أن الـ Repository يدعم معامل floor)
       _slots = await _parkingRepository.fetchSlots(floor: floor ?? _selectedFloor);
     } catch (e) {
       if (kDebugMode) print('Slots Error: $e');
@@ -67,8 +71,38 @@ class ParkingProvider extends ChangeNotifier {
     if (_selectedSlotId == slotId) {
       _selectedSlotId = null;
     } else {
-      _selectedSlotId = slotId; // هنا يتم اختيار ID واحد فقط
+      _selectedSlotId = slotId;
     }
     notifyListeners();
+  }
+
+  // ✅ NEW: Reserve a slot
+  Future<Map<String, dynamic>?> reserveSlot({
+    required int slotId,
+    required String licensePlate,
+    required DateTime startTime,
+    required DateTime endTime,
+  }) async {
+    _isReserving = true;
+    _reservationError = null;
+    notifyListeners();
+    try {
+      final result = await _parkingRepository.reserveSlot(
+        slotId: slotId,
+        licensePlate: licensePlate,
+        startTime: startTime,
+        endTime: endTime,
+      );
+      // ✅ بعد الحجز، حدّث الـ Slots
+      await loadSlots(floor: _selectedFloor);
+      return result;
+    } catch (e) {
+      _reservationError = e.toString();
+      if (kDebugMode) print('Reserve Error: $e');
+      return null;
+    } finally {
+      _isReserving = false;
+      notifyListeners();
+    }
   }
 }

@@ -4,6 +4,7 @@ class ParkingSlot {
   final String status;
   final String slotType;
   final int floor;
+  final bool isAvailableForBooking;
 
   ParkingSlot({
     required this.slotId,
@@ -11,21 +12,23 @@ class ParkingSlot {
     required this.status,
     required this.slotType,
     required this.floor,
+    this.isAvailableForBooking = true,
   });
 
   factory ParkingSlot.fromJson(Map<String, dynamic> json) {
     return ParkingSlot(
-      slotId: json['slot_id']?.toString() ?? '',
+      slotId: json['id']?.toString() ?? '',
       slotNumber: json['slot_number']?.toString() ?? '',
       status: json['status']?.toString() ?? '',
       slotType: json['slot_type']?.toString() ?? '',
       floor: (json['floor'] as num?)?.toInt() ?? 0,
+      isAvailableForBooking: json['is_available_for_booking'] ?? true,
     );
   }
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
-      'slot_id': slotId,
+      'id': slotId,
       'slot_number': slotNumber,
       'status': status,
       'slot_type': slotType,

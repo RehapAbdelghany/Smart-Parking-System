@@ -194,23 +194,56 @@ class ParkingStatusAPIView(APIView):
 class ParkingSlotListAPIView(ListAPIView):
     """
     عرض قائمة الركنات للمستخدمين المسجلين.
+    تلقائياً بتشيك على الحجوزات المنتهية وتحررها.
     """
     permission_classes = [IsAuthenticated]
     serializer_class = SlotDisplaySerializer
 
     def get_queryset(self):
+        # ✅ أول حاجة: حرر الـ Slots اللي حجزها انتهى
+        self._expire_old_reservations()
+
         queryset = ParkingSlot.objects.all().order_by('slot_number')
         status_param = self.request.query_params.get('status')
         if status_param:
             queryset = queryset.filter(status=status_param)
         return queryset
 
+    def _expire_old_reservations(self):
+        """تحرير الـ Slots اللي حجزها انتهى أوتوماتيك"""
+        now = timezone.now()
+        expired_reservations = Reservation.objects.filter(
+            is_active=True,
+            end_time__lt=now  # الحجز انتهى
+        ).select_related('slot')
+
+        for reservation in expired_reservations:
+            reservation.is_active = False
+            reservation.save()
+            # لو الـ Slot لسه reserved (مش occupied) رجّعه available
+            slot = reservation.slot
+            if slot.status == 'reserved':
+                slot.status = 'available'
+                slot.save()
+
 class CreateReservationAPIView(APIView):
     permission_classes = [IsAuthenticated]
+
     def post(self, request):
         serializer = ReservationSerializer(data=request.data)
         if serializer.is_valid():
             slot = serializer.validated_data['slot']
+
+            # ✅ شيك الأول لو في حجز منتهي على الـ Slot ده
+            now = timezone.now()
+            expired = Reservation.objects.filter(
+                slot=slot, is_active=True, end_time__lt=now
+            )
+            if expired.exists():
+                expired.update(is_active=False)
+                slot.status = 'available'
+                slot.save()
+
             if slot.status != 'available':
                 return Response({"error": "Slot is not available"}, status=400)
 
@@ -223,7 +256,9 @@ class CreateReservationAPIView(APIView):
             return Response({
                 "message": "Reservation successful",
                 "code": reservation.reservation_code,
-                "slot": slot.slot_number
+                "slot": slot.slot_number,
+                "start_time": reservation.start_time.isoformat(),
+                "end_time": reservation.end_time.isoformat(),
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

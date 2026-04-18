@@ -4,15 +4,41 @@ import 'package:provider/provider.dart';
 import '../models/parking_slot.dart' as model;
 import '../providers/parking_provider.dart';
 import '../screens/booking_page.dart';
+import 'models/parking_slot.dart';
 import 'widgets/parking_lane.dart';
 
-class ParkingPage extends StatelessWidget {
+class ParkingPage extends StatefulWidget {
   const ParkingPage({super.key});
+
+  @override
+  State<ParkingPage> createState() => _ParkingPageState();
+}
+
+class _ParkingPageState extends State<ParkingPage> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // ✅ لما الـ App يرجع من الـ background، حدّث الـ Slots
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      context.read<ParkingProvider>().loadSlots();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3, // ثلاثة أدوار: 0, 1, 2
+      length: 3,
       child: Scaffold(
         backgroundColor: const Color(0xFFE5E5E5),
         appBar: AppBar(
@@ -42,7 +68,9 @@ class ParkingPage extends StatelessWidget {
         ),
         body: Consumer<ParkingProvider>(
           builder: (context, provider, _) {
-            if (provider.isSlotsLoading) return const Center(child: CircularProgressIndicator());
+            if (provider.isSlotsLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
             final slots = provider.slots;
 
@@ -55,13 +83,13 @@ class ParkingPage extends StatelessWidget {
             final colA = slots.where((s) => s.slotNumber.startsWith('A')).toList()
               ..sort(_slotNumberComparator);
 
-            // نخلي الشارع (الأسهم) بطول أكبر عدد صفوف
-            // سواء كانوا يمين أو شمال أو في النص.
-            final int globalMaxRows = max(
-              max(colA.length, colB.length),
-              max(colC.length, colD.length),
-            );
-            final int laneArrowCount = max(globalMaxRows, 1);
+            final int globalMaxRows = [
+              colA.length,
+              colB.length,
+              colC.length,
+              colD.length,
+            ].reduce((a, b) => a > b ? a : b);
+            final int laneArrowCount = globalMaxRows > 0 ? globalMaxRows : 1;
 
             return Column(
               children: [
@@ -73,7 +101,8 @@ class ParkingPage extends StatelessWidget {
                     child: Container(
                       width: 340,
                       margin: const EdgeInsets.symmetric(horizontal: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 16),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(28),
@@ -89,13 +118,21 @@ class ParkingPage extends StatelessWidget {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(child: _buildSlotColumn(colB, provider, isLeftSkew: true)),
+                            Expanded(
+                                child: _buildSlotColumn(colB, provider,
+                                    isLeftSkew: true)),
                             ParkingLane(arrowCount: laneArrowCount),
-                            Expanded(child: _buildSlotColumn(colC, provider, isLeftSkew: false)),
+                            Expanded(
+                                child: _buildSlotColumn(colC, provider,
+                                    isLeftSkew: false)),
                             const SizedBox(width: 4),
-                            Expanded(child: _buildSlotColumn(colD, provider, isLeftSkew: true)),
+                            Expanded(
+                                child: _buildSlotColumn(colD, provider,
+                                    isLeftSkew: true)),
                             ParkingLane(arrowCount: laneArrowCount),
-                            Expanded(child: _buildSlotColumn(colA, provider, isLeftSkew: false)),
+                            Expanded(
+                                child: _buildSlotColumn(colA, provider,
+                                    isLeftSkew: false)),
                           ],
                         ),
                       ),
@@ -115,21 +152,28 @@ class ParkingPage extends StatelessWidget {
   Widget _buildGateIndicator(String label, IconData icon) {
     return Column(
       children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 10)),
+        Text(label,
+            style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+                fontSize: 10)),
         Icon(icon, color: Colors.orange, size: 18),
       ],
     );
   }
 
-  Widget _buildSlotColumn(List<model.ParkingSlot> columnSlots, ParkingProvider provider, {required bool isLeftSkew}) {
+  Widget _buildSlotColumn(
+      List<ParkingSlot> columnSlots, ParkingProvider provider,
+      {required bool isLeftSkew}) {
     return Column(
-      children: columnSlots.map<Widget>((slot) => DiagonalParkingSlot(
+      children: columnSlots
+          .map<Widget>((slot) => DiagonalParkingSlot(
         slot: slot,
         isLeftSkew: isLeftSkew,
-        // نستخدم مفتاح فريد (slotId أو slotNumber) حتى لا تكون القيمة فارغة للجميع
         isSelected: provider.selectedSlotId == _slotKey(slot),
         onTap: () => provider.selectSlot(_slotKey(slot)),
-      )).toList(),
+      ))
+          .toList(),
     );
   }
 
@@ -139,29 +183,38 @@ class ParkingPage extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
       child: ElevatedButton(
-        onPressed: hasSelection ? () {
+        onPressed: hasSelection
+            ? () {
           final selectedSlot = provider.slots.firstWhere(
-            (s) => _slotKey(s) == provider.selectedSlotId,
+                (s) => _slotKey(s) == provider.selectedSlotId,
           );
 
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => BookingPage(
-                slotId: selectedSlot.slotNumber, // نرسل رقم السلوت (مثل A1)
-                floor: provider.selectedFloor == '0' ? 'Ground' : 'Floor ${provider.selectedFloor}',
+                slotId: selectedSlot.slotNumber,
+                floor: provider.selectedFloor == '0'
+                    ? 'Ground'
+                    : 'Floor ${provider.selectedFloor}',
               ),
             ),
-          );
-        } : null,
+          ).then((_) {
+            // ✅ لما يرجع من الـ BookingPage، حدّث الـ Slots
+            provider.loadSlots();
+          });
+        }
+            : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.teal.shade700,
           minimumSize: const Size(double.infinity, 55),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         ),
         child: Text(
           hasSelection ? 'Confirm Booking' : 'Select a Slot',
-          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+              color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ),
     );
