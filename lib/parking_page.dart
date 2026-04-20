@@ -1,9 +1,9 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/parking_slot.dart' as model;
-import '../providers/parking_provider.dart';
-import '../screens/booking_page.dart';
+import 'models/parking_slot.dart' as model;
+import 'providers/parking_provider.dart';
+import 'screens/booking_page.dart';
 import 'models/parking_slot.dart';
 import 'widgets/parking_lane.dart';
 
@@ -27,7 +27,6 @@ class _ParkingPageState extends State<ParkingPage> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // ✅ لما الـ App يرجع من الـ background، حدّث الـ Slots
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -73,6 +72,20 @@ class _ParkingPageState extends State<ParkingPage> with WidgetsBindingObserver {
             }
 
             final slots = provider.slots;
+
+            if (slots.isEmpty) {
+              return const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.local_parking, size: 64, color: Colors.grey),
+                    SizedBox(height: 16),
+                    Text('No slots available',
+                        style: TextStyle(color: Colors.grey, fontSize: 16)),
+                  ],
+                ),
+              );
+            }
 
             final colB = slots.where((s) => s.slotNumber.startsWith('B')).toList()
               ..sort(_slotNumberComparator);
@@ -168,11 +181,11 @@ class _ParkingPageState extends State<ParkingPage> with WidgetsBindingObserver {
     return Column(
       children: columnSlots
           .map<Widget>((slot) => DiagonalParkingSlot(
-        slot: slot,
-        isLeftSkew: isLeftSkew,
-        isSelected: provider.selectedSlotId == _slotKey(slot),
-        onTap: () => provider.selectSlot(_slotKey(slot)),
-      ))
+                slot: slot,
+                isLeftSkew: isLeftSkew,
+                isSelected: provider.selectedSlotId == _slotKey(slot),
+                onTap: () => provider.selectSlot(_slotKey(slot)),
+              ))
           .toList(),
     );
   }
@@ -185,31 +198,30 @@ class _ParkingPageState extends State<ParkingPage> with WidgetsBindingObserver {
       child: ElevatedButton(
         onPressed: hasSelection
             ? () {
-          final selectedSlot = provider.slots.firstWhere(
-                (s) => _slotKey(s) == provider.selectedSlotId,
-          );
+                final selectedSlot = provider.slots.firstWhere(
+                  (s) => _slotKey(s) == provider.selectedSlotId,
+                );
 
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => BookingPage(
-                slotId: selectedSlot.slotNumber,
-                floor: provider.selectedFloor == '0'
-                    ? 'Ground'
-                    : 'Floor ${provider.selectedFloor}',
-              ),
-            ),
-          ).then((_) {
-            // ✅ لما يرجع من الـ BookingPage، حدّث الـ Slots
-            provider.loadSlots();
-          });
-        }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => BookingPage(
+                      slotId: selectedSlot.slotNumber,
+                      floor: provider.selectedFloor == '0'
+                          ? 'Ground'
+                          : 'Floor ${provider.selectedFloor}',
+                    ),
+                  ),
+                ).then((_) {
+                  provider.loadSlots();
+                });
+              }
             : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.teal.shade700,
           minimumSize: const Size(double.infinity, 55),
           shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         ),
         child: Text(
           hasSelection ? 'Confirm Booking' : 'Select a Slot',
@@ -222,7 +234,6 @@ class _ParkingPageState extends State<ParkingPage> with WidgetsBindingObserver {
 }
 
 String _slotKey(model.ParkingSlot slot) {
-  // بعض السجلات قد لا يكون لها slotId في الـ API، فن fallback للـ slotNumber
   return slot.slotId.isNotEmpty ? slot.slotId : slot.slotNumber;
 }
 
@@ -258,7 +269,6 @@ class DiagonalParkingSlot extends StatelessWidget {
     Color bgColor;
     bool canSelect = false;
 
-    // منطق الألوان المطلوب
     if (slot.status == 'occupied') {
       bgColor = Colors.red.shade400;
       canSelect = false;
@@ -266,10 +276,10 @@ class DiagonalParkingSlot extends StatelessWidget {
       bgColor = Colors.yellow.shade600;
       canSelect = false;
     } else if (isSelected) {
-      bgColor = Colors.green.shade500; // اللون الأخضر للمختار فقط
+      bgColor = Colors.green.shade500;
       canSelect = true;
     } else {
-      bgColor = Colors.white; // أبيض للمتاح
+      bgColor = Colors.white;
       canSelect = true;
     }
 
@@ -287,7 +297,8 @@ class DiagonalParkingSlot extends StatelessWidget {
               color: bgColor,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: isSelected ? Colors.green.shade900 : Colors.grey.shade300,
+                color:
+                    isSelected ? Colors.green.shade900 : Colors.grey.shade300,
                 width: isSelected ? 2 : 1,
               ),
             ),
@@ -296,11 +307,13 @@ class DiagonalParkingSlot extends StatelessWidget {
               transform: Matrix4.skewY(isLeftSkew ? 0.3 : -0.3),
               child: Center(
                 child: slot.status == 'occupied'
-                    ? const Icon(Icons.directions_car, color: Colors.white, size: 18)
+                    ? const Icon(Icons.directions_car,
+                        color: Colors.white, size: 18)
                     : Text(
                         slot.slotNumber,
                         style: TextStyle(
-                          color: (bgColor == Colors.white || bgColor == Colors.yellow.shade600)
+                          color: (bgColor == Colors.white ||
+                                  bgColor == Colors.yellow.shade600)
                               ? Colors.black
                               : Colors.white,
                           fontWeight: FontWeight.bold,

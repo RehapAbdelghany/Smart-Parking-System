@@ -15,7 +15,7 @@ class ParkingSlot(models.Model):
         ('reserved', 'Reserved'),
     )
 
-    slot_number = models.CharField(max_length=10, unique=True) # رقم المكان (مثلاً A1, A2)
+    slot_number = models.CharField(max_length=10) # رقم المكان (مثلاً A1, A2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='available')
     slot_type = models.CharField(max_length=20, choices=SLOT_TYPES, default='regular')
 
@@ -31,7 +31,8 @@ class ParkingSlot(models.Model):
     col = models.PositiveIntegerField(help_text="Grid column index for navigation")
 
     class Meta:
-        ordering = ['floor', 'row', 'col']  # ترتيب احترافي عند الاستعلام
+        ordering = ['floor', 'row', 'col']
+        unique_together = ['slot_number', 'floor']  # ترتيب احترافي عند الاستعلام
 
     def __str__(self):
         return f"Slot {self.slot_number} - {self.status} (Row {self.row}, Col {self.col})"

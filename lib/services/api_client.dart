@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import '../models/auth_tokens.dart';
+import '../config.dart';
 import 'secure_storage_service.dart';
 
 class ApiClient {
@@ -13,7 +14,7 @@ class ApiClient {
   })  : _dio = dio ??
       Dio(
         BaseOptions(
-          baseUrl: 'http://192.168.1.100:8000/api', // تأكدي إن ده IP السيرفر لو بتجربي من موبايل حقيقي
+          baseUrl: AppConfig.apiBaseUrl,
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 20),
           contentType: 'application/json',
@@ -27,13 +28,9 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          // جلب التوكين من التخزين الآمن
           final token = await _storage.readAccessToken();
 
           if (token != null && token.isNotEmpty) {
-            // إضافة التوكين في الهيدر
-            // ملاحظة: لو بتستخدمي JWT خليها Bearer، لو Token Authentication خليها Token
-            // عدلي السطر ده جوه الـ Interceptor (في ملف api_client.dart)
             options.headers['Authorization'] = 'Bearer $token';
             print('--- [API Request] Token Added: Bearer ${token.substring(0, 10)}...');
           } else {
@@ -43,7 +40,6 @@ class ApiClient {
           return handler.next(options);
         },
         onError: (DioException error, handler) async {
-          // لو السيرفر رد بـ 401 (التوكين انتهى) نحاول نجدده
           if (_shouldAttemptRefresh(error)) {
             print('--- [API Error] 401 Unauthorized, Attempting Refresh...');
             try {
@@ -52,7 +48,6 @@ class ApiClient {
                 final requestOptions = error.requestOptions;
                 requestOptions.headers['Authorization'] = 'Bearer ${newTokens.access}';
 
-                // إعادة محاولة الطلب القديم بالتوكين الجديد
                 final clonedResponse = await _dio.fetch(requestOptions);
                 return handler.resolve(clonedResponse);
               }
@@ -68,7 +63,6 @@ class ApiClient {
 
   Dio get dio => _dio;
 
-  // GET Request
   Future<Response<T>> get<T>(
       String path, {
         Map<String, dynamic>? queryParameters,
@@ -81,7 +75,6 @@ class ApiClient {
     );
   }
 
-  // POST Request
   Future<Response<T>> post<T>(
       String path, {
         Object? data,
@@ -104,7 +97,7 @@ class ApiClient {
     final refresh = await _storage.readRefreshToken();
     if (refresh == null || refresh.isEmpty) return null;
 
-    final refreshDio = Dio(BaseOptions(baseUrl: 'http://192.168.1.100:8000/api/auth'));
+    final refreshDio = Dio(BaseOptions(baseUrl: AppConfig.authBaseUrl));
 
     try {
       final response = await refreshDio.post('/token/refresh/', data: {'refresh': refresh});

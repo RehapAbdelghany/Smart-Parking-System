@@ -47,7 +47,6 @@ class ParkingRepository {
     }
   }
 
-  // ✅ NEW: حجز Slot
   Future<Map<String, dynamic>> reserveSlot({
     required int slotId,
     required String licensePlate,

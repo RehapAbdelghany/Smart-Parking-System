@@ -1,29 +1,62 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config.dart';
+import 'secure_storage_service.dart';
 
 class NavigationService {
-  final String baseUrl = 'http://192.168.1.100:8000';
-  
+  final String baseUrl = AppConfig.baseUrl;
+  final SecureStorageService _storage = SecureStorageService();
+
+  /// Get auth headers with token
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _storage.readAccessToken();
+    return {
+      'Content-Type': 'application/json',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+  }
+
   Future<NavigationData> fetchNavigation(String slotNumber) async {
-    // ✅ الـ URL الصح بتاع الـ Backend
     final url = Uri.parse('$baseUrl/api/navigation/$slotNumber/');
+    final headers = await _getHeaders();
 
-    print('Fetching navigation from: $url'); // للـ Debug
+    print('Fetching navigation from: $url');
 
-    final response = await http.get(
-      url,
-      headers: {'Content-Type': 'application/json'},
-    );
+    final response = await http.get(url, headers: headers);
 
-    print('Response status: ${response.statusCode}'); // للـ Debug
-    print('Response body: ${response.body}');          // للـ Debug
+    print('Response status: ${response.statusCode}');
+    print('Response body: ${response.body}');
 
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       return NavigationData.fromJson(data);
     } else {
       final error = json.decode(response.body);
-      throw Exception(error['error'] ?? 'Failed: ${response.statusCode}');
+      throw Exception(error['error'] ?? error['detail'] ?? 'Failed: ${response.statusCode}');
+    }
+  }
+
+  /// Fetch car location from cameras
+  Future<CarLocation?> fetchCarLocation(String licensePlate) async {
+    try {
+      final url = Uri.parse('$baseUrl/api/my-car-location/$licensePlate/');
+      final headers = await _getHeaders();
+
+      print('Fetching car location from: $url');
+
+      final response = await http.get(url, headers: headers);
+
+      print('Car location status: ${response.statusCode}');
+      print('Car location body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return CarLocation.fromJson(data);
+      }
+      return null;
+    } catch (e) {
+      print('Error fetching car location: $e');
+      return null;
     }
   }
 }
@@ -47,11 +80,11 @@ class NavigationData {
 
   factory NavigationData.fromJson(Map<String, dynamic> json) {
     return NavigationData(
-      slotNumber:  json['slot_number'],
-      entrance:    Position.fromJson(json['entrance']),
-      roadStop:    Position.fromJson(json['road_stop']),
+      slotNumber: json['slot_number'],
+      entrance: Position.fromJson(json['entrance']),
+      roadStop: Position.fromJson(json['road_stop']),
       destination: Position.fromJson(json['destination']),
-      totalSteps:  json['total_steps'],
+      totalSteps: json['total_steps'],
       path: (json['path'] as List)
           .map((p) => Position.fromJson(p))
           .toList(),
@@ -71,4 +104,44 @@ class Position {
       col: json['col'],
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (other is Position) {
+      return row == other.row && col == other.col;
+    }
+    return false;
+  }
+
+  @override
+  int get hashCode => row.hashCode ^ col.hashCode;
+}
+
+class CarLocation {
+  final String licensePlate;
+  final int row;
+  final int col;
+  final String zone;
+  final String lastSeen;
+
+  CarLocation({
+    required this.licensePlate,
+    required this.row,
+    required this.col,
+    required this.zone,
+    required this.lastSeen,
+  });
+
+  factory CarLocation.fromJson(Map<String, dynamic> json) {
+    final pos = json['current_position'] ?? {};
+    return CarLocation(
+      licensePlate: json['license_plate'] ?? '',
+      row: pos['row'] ?? 0,
+      col: pos['col'] ?? 0,
+      zone: pos['zone'] ?? '',
+      lastSeen: json['last_seen'] ?? '',
+    );
+  }
+
+  Position toPosition() => Position(row: row, col: col);
 }

@@ -31,7 +31,7 @@ class SlotDisplaySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ParkingSlot
-        fields = ['id', 'slot_number', 'status', 'slot_type', 'is_available_for_booking']
+        fields = ['id', 'slot_number', 'status', 'slot_type', 'floor', 'is_available_for_booking']
 
     def get_is_available_for_booking(self, obj):
         return obj.status == 'available'

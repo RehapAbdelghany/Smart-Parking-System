@@ -6,7 +6,7 @@ import '../repositories/parking_repository.dart';
 class ParkingProvider extends ChangeNotifier {
   ParkingProvider(this._parkingRepository) {
     loadSummary();
-    loadSlots(floor: '0');
+    loadSlots();
   }
 
   final ParkingRepository _parkingRepository;
@@ -17,10 +17,10 @@ class ParkingProvider extends ChangeNotifier {
   List<ParkingSlot> _slots = <ParkingSlot>[];
   bool _isSlotsLoading = false;
 
-  String _selectedFloor = '0';
+  String _selectedFloor = '1';
   String? _selectedSlotId;
 
-  // ✅ NEW: Reservation state
+  // Reservation state
   bool _isReserving = false;
   String? _reservationError;
 
@@ -35,9 +35,9 @@ class ParkingProvider extends ChangeNotifier {
   String? get reservationError => _reservationError;
 
   void setFloor(String floor) {
-    _selectedFloor = floor;
+    _selectedFloor = ((int.tryParse(floor) ?? 0) + 1).toString();
     _selectedSlotId = null;
-    loadSlots(floor: floor);
+    loadSlots();
     notifyListeners();
   }
 
@@ -54,11 +54,11 @@ class ParkingProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> loadSlots({String? floor}) async {
+  Future<void> loadSlots({String? status}) async {
     _isSlotsLoading = true;
     notifyListeners();
     try {
-      _slots = await _parkingRepository.fetchSlots(floor: floor ?? _selectedFloor);
+      _slots = await _parkingRepository.fetchSlots(status: status, floor: _selectedFloor);
     } catch (e) {
       if (kDebugMode) print('Slots Error: $e');
     } finally {
@@ -76,7 +76,6 @@ class ParkingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ✅ NEW: Reserve a slot
   Future<Map<String, dynamic>?> reserveSlot({
     required int slotId,
     required String licensePlate,
@@ -93,8 +92,7 @@ class ParkingProvider extends ChangeNotifier {
         startTime: startTime,
         endTime: endTime,
       );
-      // ✅ بعد الحجز، حدّث الـ Slots
-      await loadSlots(floor: _selectedFloor);
+      await loadSlots();
       return result;
     } catch (e) {
       _reservationError = e.toString();

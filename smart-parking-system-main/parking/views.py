@@ -207,6 +207,10 @@ class ParkingSlotListAPIView(ListAPIView):
         status_param = self.request.query_params.get('status')
         if status_param:
             queryset = queryset.filter(status=status_param)
+        # ✅ Filter by floor
+        floor_param = self.request.query_params.get("floor")
+        if floor_param:
+            queryset = queryset.filter(floor=int(floor_param))
         return queryset
 
     def _expire_old_reservations(self):
