@@ -92,11 +92,14 @@ SIMPLE_JWT = {
 # ===== REST FRAMEWORK =====
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.SessionAuthentication',  # ← required for admin dashboard
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+
+    
 }
 
 # ===== INTERNATIONALIZATION =====
