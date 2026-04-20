@@ -8,9 +8,11 @@ from .views import (
     AdminUserListAPIView,
     CreateAdminUserAPIView,
     AdminReservationListAPIView,
+    admin_dashboard_view,
 )
 
 urlpatterns = [
+    path('', admin_dashboard_view,),
     path('stats/', AdminGarageStatsAPIView.as_view(), name='admin-stats'),
     path('analytics/', AdminPaymentAnalyticsAPIView.as_view(), name='admin-analytics'),
     path('logs/', AdminVehicleLogListAPIView.as_view(), name='admin-logs'),
