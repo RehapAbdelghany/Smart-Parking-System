@@ -6,7 +6,7 @@ from PIL import Image
 from torchvision import transforms
 import torchvision.models as models
 from transformers import CLIPProcessor, CLIPModel
-from ultralytics import YOLO
+import json
 
 # ==============================================================
 # 1. Car Analyzer Class
@@ -46,122 +46,99 @@ class CarAnalyzer:
         return color, embedding
 
 # ==============================================================
-# 2. Interactive System
+# 2. Interactive Gate System Class
 # ==============================================================
 class InteractiveGateSystem:
-    def __init__(self, camera_id, config_path="cameras_config.json"):
-        # 1. تحميل الإعدادات من الملف
+    def __init__(self, camera_id, engine, analyzer, config_path="cameras_config.json"):
+        self.config_path = config_path
         with open(config_path, 'r') as f:
             full_config = json.load(f)
         
         self.camera_id = str(camera_id)
         config = full_config[self.camera_id]
         
-        # 2. تعيين الإعدادات الخاصة بهذه الكاميرا فقط
         self.source = config['source']
         self.roi_points = config['roi']
         self.trigger_line = config['trigger']
         
-        # باقي التعريفات (YOLO, Analyzer, etc.)
-        self.analyzer = CarAnalyzer()
-        self.yolo = YOLO("yolov8n.pt")
-        self.window_name = f"Camera {self.camera_id} - {config['zone']}"
+        self.analyzer = analyzer
+        self.engine = engine
+        
+        self.window_name = f"Camera {self.camera_id} - {config.get('zone', 'Gate')}"
         self.tracked_ids = set()
+        self.selected_point = None 
+
+    def save_config(self):
+        with open(self.config_path, 'r') as f:
+            full_config = json.load(f)
+        full_config[self.camera_id]['roi'] = self.roi_points
+        full_config[self.camera_id]['trigger'] = self.trigger_line
+        with open(self.config_path, 'w') as f:
+            json.dump(full_config, f, indent=4)
+        print(f"[SYSTEM] Config updated for camera {self.camera_id}")
 
     def send_to_backend(self, color, embedding):
-    # تأكد أن الرابط هو api/tracking/ كما هو مسجل في الـ urls.py عندك
         url = "http://127.0.0.1:8000/api/tracking/"
-    
-        payload = {
-        "car_embedding": embedding, # المصفوفة اللي جاية من ReID
-        "camera_id": 1,             # تأكد أن رقم 1 موجود في جدول Camera في الداتابيز
-        "car_color": color.lower()  # تحويل اللون لـ lowercase ليطابق الفلتر
-        }
-    
+        payload = {"car_embedding": embedding, "camera_id": int(self.camera_id) + 1, "car_color": color.lower()}
         try:
-           response = requests.post(url, json=payload, timeout=2)
-           if response.status_code == 200:
-              data = response.json()
-              print(f"✅ تم التعرف على السيارة: {data['identified_plate']}")
-              print(f"📍 الموقع الحالي: {data['current_zone']}")
-           elif response.status_code == 404:
-              print("❌ لم يتم العثور على سيارة مطابقة في الجراج")
-           else:
-            print(f"⚠️ خطأ من السيرفر: {response.status_code} - {response.text}")
+            requests.post(url, json=payload, timeout=2)
         except Exception as e:
-            print(f"❌ فشل الاتصال: {e}")
+            print(f"❌ Error: {e}")
 
     def mouse_callback(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
             for i, p in enumerate(self.roi_points):
-                if np.linalg.norm(np.array(p) - np.array([x, y])) < 15:
+                if np.linalg.norm(np.array(p) - np.array([x, y])) < 25:
                     self.selected_point = ('roi', i)
                     return
             for i, p in enumerate(self.trigger_line):
-                if np.linalg.norm(np.array(p) - np.array([x, y])) < 15:
+                if np.linalg.norm(np.array(p) - np.array([x, y])) < 25:
                     self.selected_point = ('trigger', i)
                     return
+
         elif event == cv2.EVENT_MOUSEMOVE:
             if self.selected_point:
-                type, idx = self.selected_point
-                if type == 'roi': self.roi_points[idx] = [x, y]
-                else: self.trigger_line[idx] = [x, y]
+                pt_type, idx = self.selected_point
+                if pt_type == 'roi': self.roi_points[idx] = [x, y]
+                elif pt_type == 'trigger': self.trigger_line[idx] = [x, y]
+
         elif event == cv2.EVENT_LBUTTONUP:
             if self.selected_point:
-                print(f"\n--- Coordinates Updated: ROI={self.roi_points}, Trigger={self.trigger_line}")
+                self.save_config()
             self.selected_point = None
 
-    def run(self):
-        cap = cv2.VideoCapture(self.source)
-        cv2.namedWindow(self.window_name)
-        cv2.setMouseCallback(self.window_name, self.mouse_callback)
+    def get_ui_frame(self):
+        from camera_manager import get_shared_frame
+        data = get_shared_frame(int(self.camera_id))
+        if data is None: return None
+        frame, _ = data
+        frame_draw = frame.copy()
+        roi_np = np.array(self.roi_points, dtype=np.int32)
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret: break
+        self.engine.submit_frame(int(self.camera_id), frame)
+        results = self.engine.get_result(int(self.camera_id))
 
-            roi_np = np.array(self.roi_points, dtype=np.int32)
-            results = self.yolo.track(frame, persist=True, verbose=False)
-            
-            if results[0].boxes.id is not None:
-                boxes = results[0].boxes.xyxy.int().cpu().tolist()
-                ids = results[0].boxes.id.int().cpu().tolist()
-                
-                for box, track_id in zip(boxes, ids):
-                    x1, y1, x2, y2 = box
-                    cx, cy = (x1 + x2) // 2, y2
+        if results and results[0].boxes.id is not None:
+            boxes = results[0].boxes.xyxy.int().cpu().tolist()
+            ids = results[0].boxes.id.int().cpu().tolist()
+            for box, track_id in zip(boxes, ids):
+                x1, y1, x2, y2 = box
+                cx, cy = (x1 + x2) // 2, y2 
+                if cv2.pointPolygonTest(roi_np, (cx, cy), False) >= 0:
+                    p1, p2 = np.array(self.trigger_line[0]), np.array(self.trigger_line[1])
+                    p3 = np.array([cx, cy])
+                    dist = np.abs(np.cross(p2-p1, p1-p3)) / np.linalg.norm(p2-p1)
+                    if dist < 12 and track_id not in self.tracked_ids:
+                        car_crop = frame[max(0, y1):y2, max(0, x1):x2]
+                        if car_crop.size > 0:
+                            color, emb = self.analyzer.get_analysis(car_crop)
+                            self.send_to_backend(color, emb)
+                            self.tracked_ids.add(track_id)
 
-                    if cv2.pointPolygonTest(roi_np, (cx, cy), False) >= 0:
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
-                        
-                        # حساب المسافة من الخط (تعديل لتجنب NumPy Warning)
-                        p1 = np.array(self.trigger_line[0])
-                        p2 = np.array(self.trigger_line[1])
-                        p3 = np.array([cx, cy])
-                        
-                        # معادلة المسافة بين نقطة وخط (2D)
-                        dist = np.abs(np.cross(p2-p1, p1-p3)) / np.linalg.norm(p2-p1)
-                        
-                        if dist < 12 and track_id not in self.tracked_ids:
-                            car_crop = frame[max(0,y1):y2, max(0,x1):x2]
-                            if car_crop.size > 0:
-                                color, emb = self.analyzer.get_analysis(car_crop)
-                                print(f"📍 Trigger Hit! Analyzing Car ID: {track_id}")
-                                # تفعيل الإرسال هنا
-                                self.send_to_backend(color, emb)
-                                self.tracked_ids.add(track_id)
-
-            # الرسم
-            cv2.polylines(frame, [roi_np], True, (0, 255, 0), 2)
-            cv2.line(frame, tuple(self.trigger_line[0]), tuple(self.trigger_line[1]), (0, 0, 255), 3)
-            
-            cv2.imshow(self.window_name, frame)
-            if cv2.waitKey(1) & 0xFF == 27: break
-
-        cap.release()
-        cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    # تأكد أن السيرفر يعمل على هذا الرابط
-    system = InteractiveGateSystem(source="D02.mp4") 
-    system.run()
+        cv2.polylines(frame_draw, [roi_np], True, (0, 255, 0), 2)
+        for p in self.roi_points:
+            cv2.circle(frame_draw, (int(p[0]), int(p[1])), 8, (255, 255, 255), -1)
+        cv2.line(frame_draw, tuple(self.trigger_line[0]), tuple(self.trigger_line[1]), (0, 0, 255), 3)
+        for p in self.trigger_line:
+            cv2.circle(frame_draw, (int(p[0]), int(p[1])), 8, (255, 255, 255), -1)
+        return frame_draw
