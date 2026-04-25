@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework import permissions
 from rest_framework import status
 
+
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 from django.db.models import Count
@@ -20,6 +21,10 @@ from .grid import GARAGE_GRID, SLOT_COORDINATES
 
 import uuid
 import numpy as np
+import math
+from datetime import timedelta
+from django.utils import timezone
+
 ENTRANCE = (0, 1)   # ENTER cell
 
 class VehicleEntryAPIView(APIView):
@@ -73,7 +78,7 @@ class VehicleEntryAPIView(APIView):
                 vehicle_log = VehicleLog.objects.create(
                     license_plate=plate,
                     entry_image=v_data.get('entry_image'),
-                    car_embedding=v_data['car_embedding'],
+                    car_embedding=v_data.get('car_embedding'),
                     car_color=v_data.get('car_color', 'unknown'),
                     is_inside=True,
                     slot=target_slot,
@@ -270,7 +275,6 @@ def navigation_view(request, slot_number: str):
         ],
     })
 
-
 class VehicleTrackingAPIView(APIView):
     """
     تتبع السيارة عبر الكاميرات الداخلية باستخدام مقارنة البصمات (Embeddings) في الذاكرة.
@@ -288,54 +292,154 @@ class VehicleTrackingAPIView(APIView):
         camera_id = v_data['camera_id']
         color_hint = v_data.get('car_color')
 
+        time_threshold = timezone.now() - timedelta(minutes=2)
+
         # 1. فلترة ذكية لتقليل حجم البيانات المسحوبة (Optimization)
-        # نسحب فقط السيارات اللي "بالداخل" حالياً
-        queryset = VehicleLog.objects.filter(is_inside=True)
-        
-        # إذا كان اللون معروفاً، نستخدمه لتقليص دائرة البحث (Heuristic filtering)
+        queryset = VehicleLog.objects.filter(
+            is_inside=True,
+            status='moving',
+            last_seen__gte=time_threshold
+        )
+
         if color_hint and color_hint != 'unknown':
             queryset = queryset.filter(car_color=color_hint)
 
-        # نسحب فقط الحقول الضرورية لتوفير الذاكرة
         logs = queryset.only('id', 'license_plate', 'car_embedding')
 
         if not logs.exists():
             return Response({"status": "unknown", "message": "No active vehicles match the criteria"}, status=404)
 
-        # 2. عملية البحث عن أقرب تطابق (Similarity Search in Memory)
+        # 2. عملية البحث عن أقرب تطابق باستخدام Cosine Similarity
         best_match = None
-        min_distance = float('inf')
-        SIMILARITY_THRESHOLD = 0.6  # المسافة الإقليدية: كلما قل الرقم زاد التشابه
+        max_similarity = -1  # Cosine similarity range: [-1, 1], higher = more similar
+        SIMILARITY_THRESHOLD = 0.80  # يجب أن يكون التشابه 80% أو أكثر
+
+        # ✅ تطبيع البصمة الواردة مرة واحدة خارج الحلقة (Optimization)
+        incoming_norm = np.linalg.norm(incoming_embedding)
+        if incoming_norm == 0:
+            return Response({"status": "error", "message": "Invalid embedding: zero vector"}, status=400)
+        incoming_normalized = incoming_embedding / incoming_norm
+
+        # 📊 قائمة لتخزين نتائج التشابه لكل سيارة
+        similarity_results = []
 
         for log in logs:
-            # تحويل البصمة المخزنة في الداتابيز لمصفوفة Numpy
             existing_embedding = np.array(log.car_embedding)
-            
-            # حساب المسافة الإقليدية (Euclidean Distance)
-            distance = np.linalg.norm(incoming_embedding - existing_embedding)
 
-            if distance < min_distance:
-                min_distance = distance
+            # تطبيع البصمة المخزنة
+            existing_norm = np.linalg.norm(existing_embedding)
+            if existing_norm == 0:
+                continue  # تخطي البصمات الصفرية الفاسدة
+
+            existing_normalized = existing_embedding / existing_norm
+
+            # حساب Cosine Similarity = dot product of two normalized vectors
+            similarity = float(np.dot(incoming_normalized, existing_normalized))
+
+            # 📊 تسجيل نتيجة كل مقارنة
+            similarity_results.append({
+                "license_plate": log.license_plate,
+                "similarity_score": round(similarity, 4),
+                "passed_threshold": similarity >= SIMILARITY_THRESHOLD
+            })
+
+            if similarity > max_similarity:
+                max_similarity = similarity
                 best_match = log
 
+        # ترتيب النتائج تنازلياً حسب التشابه للعرض
+        similarity_results.sort(key=lambda x: x["similarity_score"], reverse=True)
+
         # 3. التحقق من عتبة الثقة (Thresholding)
-        if best_match and min_distance <= SIMILARITY_THRESHOLD:
-            # تحديث موقع السيارة في الداتابيز
+        if best_match and max_similarity >= SIMILARITY_THRESHOLD:
             camera = get_object_or_404(Camera, camera_id=camera_id)
+            tracking_msg = f"Vehicle {best_match.license_plate} tracked at {camera.zone_name}"
             best_match.last_camera = camera
-            best_match.save(update_fields=['last_camera']) # تحديث حقل واحد فقط للسرعة
+            best_match.last_seen = timezone.now()
+            assigned_slot = best_match.slot
+
+            if assigned_slot:
+                if assigned_slot.camera == camera:
+                    best_match.status = 'parked'
+                    assigned_slot.status = 'occupied'
+                    assigned_slot.save()
+                    tracking_msg = f"Vehicle reached its assigned slot area (monitored by {camera.camera_id}) and is now Parked."
+                else:
+                    tracking_msg = f"Vehicle tracking at {camera.zone_name}. Not at target slot yet."
+
+            best_match.save(update_fields=['last_camera', 'last_seen', 'status'])
 
             return Response({
                 "status": "success",
                 "identified_plate": best_match.license_plate,
-                "confidence_score": round(float(min_distance), 3),
+                "confidence_score": round(max_similarity, 4),
                 "current_zone": camera.zone_name,
-                "message": f"Vehicle {best_match.license_plate} tracked at {camera.zone_name}"
+                "message": f"Vehicle {best_match.license_plate} tracked at {camera.zone_name}",
+                "tracking_msg": tracking_msg,
+                # 📊 نتائج التشابه لكل المركبات المقارنة
+                "all_similarity_scores": similarity_results
             }, status=200)
 
-        # 4. حالة الفشل في التعرف (Unknown Vehicle)
+        # 4. حالة الفشل في التعرف — نرجع النتائج حتى لو فشل التعرف
         return Response({
             "status": "unknown",
-            "message": "Vehicle detected but could not be identified with high confidence"
+            "message": "Vehicle detected but could not be identified with high confidence",
+            "best_similarity_score": round(max_similarity, 4) if max_similarity > -1 else None,
+            "all_similarity_scores": similarity_results
         }, status=404)
     
+class UpdateEntryEmbeddingAPIView(APIView):
+    """
+    تحديث بصمة السيارة (Embedding) من المنظور الأمامي إلى المنظور العلوي
+    بناءً على تتابع الكاميرات الزمني بعد الدخول مباشرة.
+    """
+    permission_classes = [IsCameraNode]
+    # permission_classes = [all_all]
+
+    def post(self, request, *args, **kwargs):
+        # نستقبل الـ Embedding الجديد من الكاميرا العلوية (مثل CAM-02)
+        new_embedding = request.data.get('car_embedding')
+        camera_id = request.data.get('camera_id')
+
+        if not new_embedding:
+            return Response({"error": "No embedding provided"}, status=400)
+
+        # 1. تحديد نافذة زمنية ضيقة جداً (آخر دقيقة مثلاً)
+        # لأننا نبحث عن السيارة التي دخلت الآن وتمر تحت الكاميرا التالية
+        time_limit = timezone.now() - timedelta(seconds=60)
+
+        # 2. البحث عن آخر سيارة دخلت من بوابة الدخول (CAM-ENTRY) 
+        # ولم يتم تحديث منظورها بعد (أو ما زالت في أول رحلتها)
+        last_vehicle = VehicleLog.objects.filter(
+            is_inside=True,
+            status='moving',
+            entry_time__gte=time_limit,
+            # نفترض أن كاميرا الدخول ثابتة ومعروفة بـ CAM-ENTRY
+            last_camera_id=1,
+            car_embedding__isnull=True
+        ).order_by('entry_time').first()
+
+
+
+        if not last_vehicle:
+            return Response({
+                "status": "ignored",
+                "message": "No recently entered vehicle found to update perspective"
+            }, status=404)
+
+        # 3. تحديث الـ Embedding بالمنظور الجديد
+        # من الآن فصاعداً، الكاميرات العلوية ستتعرف عليها بسهولة
+        last_vehicle.car_embedding = new_embedding
+        
+        # تحديث الكاميرا الحالية لـ CAM-02 مثلاً
+        current_camera = Camera.objects.filter(camera_id=camera_id).first()
+        if current_camera:
+            last_vehicle.last_camera = current_camera
+            
+        last_vehicle.save(update_fields=['car_embedding', 'last_camera', 'last_seen'])
+
+        return Response({
+            "status": "success",
+            "license_plate": last_vehicle.license_plate,
+            "message": f"Embedding updated to top-view for vehicle {last_vehicle.license_plate}"
+        }, status=200)

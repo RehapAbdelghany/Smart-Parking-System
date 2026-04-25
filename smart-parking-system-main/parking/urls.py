@@ -7,6 +7,8 @@ from .views import ParkingSlotListAPIView
 from .views import CreateReservationAPIView
 from .views import VehicleTrackingAPIView
 
+from .views import UpdateEntryEmbeddingAPIView
+
 urlpatterns = [
 
     path('api/entry/', VehicleEntryAPIView.as_view(), name='vehicle-entry'),
@@ -19,5 +21,7 @@ urlpatterns = [
     
     path('api/navigation/<str:slot_number>/', navigation_view),
     path('api/tracking/', VehicleTrackingAPIView.as_view(), name='vehicle-tracking'),
+
+    path('api/update-perspective/', UpdateEntryEmbeddingAPIView.as_view(), name='update_perspective'),
 
 ]

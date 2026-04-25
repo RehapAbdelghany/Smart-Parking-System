@@ -30,13 +30,22 @@ class ParkingSlot(models.Model):
     row = models.PositiveIntegerField(help_text="Grid row index for navigation")
     col = models.PositiveIntegerField(help_text="Grid column index for navigation")
 
+
+    # الربط مع الكاميرا: السلوت بتشوفه كاميرا واحدة، والكاميرا بتشوف سلوتس كتير
+    camera = models.ForeignKey(
+        'camera',
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='monitored_slots',
+        help_text="الكاميرا المسؤولة عن مراقبة هذا المكان"
+    )
     class Meta:
         ordering = ['floor', 'row', 'col']  # ترتيب احترافي عند الاستعلام
 
     def __str__(self):
         return f"Slot {self.slot_number} - {self.status} (Row {self.row}, Col {self.col})"
     
-
 class Camera(models.Model):
     camera_id = models.CharField(max_length=50, unique=True)
     zone_name = models.CharField(max_length=100)
@@ -45,8 +54,14 @@ class Camera(models.Model):
     col = models.PositiveIntegerField()
 
     def __str__(self):
-            return f"Camera {self.camera_id} - Zone {self.zone_name}"
+            return f"camera {self.camera_id} - Zone {self.zone_name}"
+
 class VehicleLog(models.Model):
+    VEHICLE_STATUS = (
+        ('moving', 'Moving'),
+        ('parked', 'Parked'),
+        ('exited', 'Exited'),
+    )
     license_plate = models.CharField(max_length=20) # رقم اللوحة اللي هيطلع من الـ ML
     
     # صور الدخول والخروج (هتتحفظ في مجلد media اللي عملناه)
@@ -72,6 +87,7 @@ class VehicleLog(models.Model):
     last_camera = models.ForeignKey(Camera, on_delete=models.SET_NULL, null=True, blank=True)
     # هل السيارة حالياً داخل الموقف؟ (لتحسين سرعة البحث)
     is_inside = models.BooleanField(default=True)
+    status = models.CharField(max_length=10, choices=VEHICLE_STATUS, default='moving')
     last_seen = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -94,3 +110,4 @@ class Reservation(models.Model):
 
     def __str__(self):
         return f"Res {self.reservation_code} for {self.user.username}"
+
