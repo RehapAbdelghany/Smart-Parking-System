@@ -3,7 +3,6 @@ import '../models/user.dart';
 import '../repositories/auth_repository.dart';
 
 class AuthProvider extends ChangeNotifier {
-  // تم تصليح الكونستركتور ليكون متوافق مع تعريف الحقل بالأسفل
   AuthProvider(this._authRepository);
 
   final AuthRepository _authRepository;
@@ -13,27 +12,24 @@ class AuthProvider extends ChangeNotifier {
   User? _user;
 
   bool get isLoading => _isLoading;
-
-  // التصليح هنا: الاسم الكامل هو errorMessage ليقرأه باقي المشروع
   String? get errorMessage => _errorMessage;
-
   User? get user => _user;
   bool get isLoggedIn => _user != null;
 
   Future<bool> login(String username, String password) async {
     _setLoading(true);
     try {
-      final result =
-      await _authRepository.login(username: username.trim(), password: password);
+      final result = await _authRepository.login(
+        username: username.trim(),
+        password: password,
+      );
       _user = result.$1;
       _errorMessage = null;
       notifyListeners();
       return true;
     } catch (e) {
       _errorMessage = 'Login failed: ${e.toString()}';
-      if (kDebugMode) {
-        print('Login error: $e');
-      }
+      if (kDebugMode) print('Login error: $e');
       notifyListeners();
       return false;
     } finally {
@@ -65,11 +61,23 @@ class AuthProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _errorMessage = 'Signup failed: ${e.toString()}';
-      if (kDebugMode) {
-        print('Signup error: $e');
-      }
+      if (kDebugMode) print('Signup error: $e');
       notifyListeners();
       return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<void> fetchProfile() async {
+    _setLoading(true);
+    try {
+      final user = await _authRepository.fetchProfile();
+      if (user != null) {
+        _user = user;
+      }
+    } catch (e) {
+      if (kDebugMode) print('Profile fetch error: $e');
     } finally {
       _setLoading(false);
     }

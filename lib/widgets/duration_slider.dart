@@ -16,7 +16,7 @@ class DurationSlider extends StatefulWidget {
 
 class _DurationSliderState extends State<DurationSlider> {
   late double _currentValue;
-  bool _useMinutes = false; // ✅ Toggle for testing
+  bool _useMinutes = false;
 
   @override
   void initState() {
@@ -26,6 +26,9 @@ class _DurationSliderState extends State<DurationSlider> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 8),
       child: Column(
@@ -34,18 +37,19 @@ class _DurationSliderState extends State<DurationSlider> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Duration',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              Text('Duration', style: theme.textTheme.titleMedium),
               Row(
                 children: [
                   Text(
                     _useMinutes
                         ? '${_currentValue.round()} min'
                         : '${_currentValue.round()} h',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: theme.textTheme.bodyLarge?.color,
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  // ✅ Toggle button for testing
                   GestureDetector(
                     onTap: () {
                       setState(() {
@@ -53,21 +57,20 @@ class _DurationSliderState extends State<DurationSlider> {
                         _currentValue = _useMinutes ? 2 : 1;
                       });
                       widget.onChanged(_useMinutes
-                          ? -_currentValue.round() // negative = minutes
+                          ? -_currentValue.round()
                           : _currentValue.round());
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: _useMinutes
-                            ? Colors.orange.shade100
-                            : Colors.grey.shade200,
+                            ? Colors.orange.withOpacity(isDark ? 0.2 : 0.1)
+                            : (isDark ? const Color(0xFF2A2F48) : Colors.grey.shade200),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: _useMinutes
                               ? Colors.orange
-                              : Colors.grey.shade400,
+                              : (isDark ? const Color(0xFF3A3F58) : Colors.grey.shade400),
                         ),
                       ),
                       child: Text(
@@ -75,8 +78,9 @@ class _DurationSliderState extends State<DurationSlider> {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          color:
-                              _useMinutes ? Colors.orange : Colors.grey.shade600,
+                          color: _useMinutes
+                              ? Colors.orange
+                              : theme.textTheme.bodySmall?.color,
                         ),
                       ),
                     ),
@@ -94,15 +98,13 @@ class _DurationSliderState extends State<DurationSlider> {
             label: _useMinutes
                 ? '${_currentValue.round()} min'
                 : '${_currentValue.round()} h',
-            activeColor: _useMinutes ? Colors.orange : Colors.teal,
-            inactiveColor: Colors.grey,
+            activeColor: _useMinutes ? Colors.orange : theme.colorScheme.primary,
+            inactiveColor: isDark ? const Color(0xFF2A2F48) : Colors.grey.shade300,
             onChanged: (v) {
               setState(() {
                 _currentValue = v;
               });
-              widget.onChanged(_useMinutes
-                  ? -v.round() // negative = minutes
-                  : v.round());
+              widget.onChanged(_useMinutes ? -v.round() : v.round());
             },
           ),
           if (_useMinutes)

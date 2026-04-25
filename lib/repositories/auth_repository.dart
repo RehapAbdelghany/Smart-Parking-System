@@ -1,5 +1,4 @@
 import 'package:dio/dio.dart';
-
 import '../models/auth_tokens.dart';
 import '../models/user.dart';
 import '../services/api_client.dart';
@@ -25,7 +24,7 @@ class AuthRepository {
   }) async {
     try {
       final Response<dynamic> response =
-          await _apiClient.post<dynamic>('/auth/register/', data: <String, dynamic>{
+          await _apiClient.post<dynamic>('/auth/register/', data: {
         'username': username,
         'password': password,
         'password_confirm': passwordConfirm,
@@ -38,13 +37,9 @@ class AuthRepository {
         final data = (response.data is Map<String, dynamic>)
             ? (response.data as Map<String, dynamic>)
             : <String, dynamic>{};
-
-        // Backend register returns: { "user": {...}, "message": "..." } (no tokens).
         final user = data['user'] is Map<String, dynamic>
             ? User.fromJson(data['user'] as Map<String, dynamic>)
             : User.fromJson(data);
-
-        // Login immediately to obtain JWT tokens for the new account.
         final loginResult = await login(username: username, password: password);
         final loggedInUser = loginResult.$1 ?? user;
         final tokens = loginResult.$2;
@@ -62,7 +57,7 @@ class AuthRepository {
   }) async {
     try {
       final Response<dynamic> response =
-          await _apiClient.post<dynamic>('/auth/login/', data: <String, dynamic>{
+          await _apiClient.post<dynamic>('/auth/login/', data: {
         'username': username,
         'password': password,
       });
@@ -74,7 +69,6 @@ class AuthRepository {
         if (data['user'] != null) {
           user = User.fromJson(data['user'] as Map<String, dynamic>);
         }
-
         await _storage.saveTokens(
           accessToken: tokens.access,
           refreshToken: tokens.refresh,
@@ -87,6 +81,19 @@ class AuthRepository {
     }
   }
 
+  Future<User?> fetchProfile() async {
+    try {
+      final Response<dynamic> response =
+          await _apiClient.get<dynamic>('/auth/profile/');
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        return User.fromJson(response.data as Map<String, dynamic>);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<void> logout() async {
     await _storage.clearTokens();
   }
@@ -96,57 +103,35 @@ class AuthRepository {
     return access != null && access.isNotEmpty;
   }
 
-  String _extractErrorMessage(DioException exception,
-      {required String fallback}) {
+  String _extractErrorMessage(DioException exception, {required String fallback}) {
     final response = exception.response;
     if (response?.data is Map<String, dynamic>) {
       final data = response!.data as Map<String, dynamic>;
-      if (data['detail'] != null) {
-        return data['detail'].toString();
-      }
-      if (data['error'] != null) {
-        return data['error'].toString();
-      }
-      // DRF validation errors usually look like:
-      // { "field": ["msg1", "msg2"], "non_field_errors": ["msg"] }
+      if (data['detail'] != null) return data['detail'].toString();
+      if (data['error'] != null) return data['error'].toString();
       final formatted = _formatValidationErrors(data);
-      if (formatted != null && formatted.isNotEmpty) {
-        return formatted;
-      }
+      if (formatted != null && formatted.isNotEmpty) return formatted;
     }
     return fallback;
   }
 
   String? _formatValidationErrors(Map<String, dynamic> data) {
     final lines = <String>[];
-
-    void addLine(String key, String message) {
-      final label = key == 'non_field_errors' ? 'Error' : key;
-      lines.add('$label: $message');
-    }
-
     for (final entry in data.entries) {
       final key = entry.key.toString();
       final value = entry.value;
       if (value == null) continue;
-
       if (value is List) {
         final msgs = value.map((e) => e.toString()).where((s) => s.isNotEmpty);
         final joined = msgs.join('\n- ');
         if (joined.isNotEmpty) {
-          addLine(key, '- $joined');
+          lines.add('${key == 'non_field_errors' ? 'Error' : key}: - $joined');
         }
-      } else if (value is Map) {
-        // Rare: nested errors, stringify one level.
-        addLine(key, value.toString());
       } else {
         final msg = value.toString();
-        if (msg.isNotEmpty) addLine(key, msg);
+        if (msg.isNotEmpty) lines.add('$key: $msg');
       }
     }
-
-    if (lines.isEmpty) return null;
-    return lines.join('\n');
+    return lines.isEmpty ? null : lines.join('\n');
   }
 }
-

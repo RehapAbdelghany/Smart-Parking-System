@@ -408,3 +408,143 @@ class UserCurrentLocationAPIView(APIView):
             },
             "last_seen": log.last_seen.strftime('%H:%M:%S')
         }, status=200)
+
+class UserReservationsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        now = timezone.now()
+        expired = Reservation.objects.filter(
+            user=request.user, is_active=True, end_time__lt=now
+        ).select_related('slot')
+        for res in expired:
+            res.is_active = False
+            res.save()
+            if res.slot.status == 'reserved':
+                res.slot.status = 'available'
+                res.slot.save()
+
+        reservations = Reservation.objects.filter(
+            user=request.user
+        ).select_related('slot').order_by('-created_at')
+
+        data = []
+        for r in reservations:
+            data.append({
+                'id': r.id,
+                'reservation_code': r.reservation_code,
+                'slot_number': r.slot.slot_number,
+                'floor': r.slot.floor,
+                'license_plate': r.license_plate,
+                'start_time': r.start_time.isoformat(),
+                'end_time': r.end_time.isoformat(),
+                'is_active': r.is_active,
+                'created_at': r.created_at.isoformat(),
+            })
+        return Response(data)
+
+
+class CancelReservationAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, reservation_id):
+        try:
+            reservation = Reservation.objects.get(
+                id=reservation_id, user=request.user
+            )
+        except Reservation.DoesNotExist:
+            return Response({"error": "Reservation not found"}, status=404)
+
+        if not reservation.is_active:
+            return Response({"error": "Reservation is already cancelled"}, status=400)
+
+        reservation.is_active = False
+        reservation.save()
+
+        slot = reservation.slot
+        if slot.status == 'reserved':
+            slot.status = 'available'
+            slot.save()
+
+        return Response({"message": "Reservation cancelled successfully"})
+
+
+class ExtendReservationAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, reservation_id):
+        try:
+            reservation = Reservation.objects.get(
+                id=reservation_id, user=request.user, is_active=True
+            )
+        except Reservation.DoesNotExist:
+            return Response({"error": "Active reservation not found"}, status=404)
+
+        now = timezone.now()
+        if reservation.end_time < now:
+            return Response({"error": "Reservation already expired"}, status=400)
+
+        extend_minutes = request.data.get('extend_minutes', 30)
+        try:
+            extend_minutes = int(extend_minutes)
+        except (ValueError, TypeError):
+            return Response({"error": "Invalid extend_minutes"}, status=400)
+
+        if extend_minutes < 1 or extend_minutes > 480:
+            return Response({"error": "Extension must be between 1 and 480 minutes"}, status=400)
+
+        from datetime import timedelta
+        reservation.end_time += timedelta(minutes=extend_minutes)
+        reservation.save()
+
+        return Response({
+            "message": f"Reservation extended by {extend_minutes} minutes",
+            "new_end_time": reservation.end_time.isoformat(),
+        })
+
+class CleanupExpiredAPIView(APIView):
+    """Force cleanup of expired reservations and their slots"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        now = timezone.now()
+        cleaned = 0
+        details = []
+        
+        # 1. Expire active reservations that have ended
+        expired_reservations = Reservation.objects.filter(
+            is_active=True,
+            end_time__lt=now
+        ).select_related('slot')
+        
+        for reservation in expired_reservations:
+            reservation.is_active = False
+            reservation.save()
+            if reservation.slot.status == 'reserved':
+                reservation.slot.status = 'available'
+                reservation.slot.save()
+                cleaned += 1
+                details.append(f"expired: {reservation.slot.slot_number}")
+        
+        # 2. Fix ALL orphaned reserved slots
+        # A slot is orphaned if status=reserved but has NO active reservation with future end_time
+        reserved_slots = ParkingSlot.objects.filter(status='reserved')
+        for slot in reserved_slots:
+            has_valid = Reservation.objects.filter(
+                slot=slot,
+                is_active=True,
+                end_time__gte=now
+            ).exists()
+            if not has_valid:
+                slot.status = 'available'
+                slot.save()
+                cleaned += 1
+                details.append(f"orphan: {slot.slot_number}")
+        
+        return Response({
+            "status": "success",
+            "cleaned_slots": cleaned,
+            "details": details,
+            "message": f"Cleaned {cleaned} slots"
+        })
+

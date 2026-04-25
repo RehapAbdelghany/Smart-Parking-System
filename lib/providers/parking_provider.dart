@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/parking_slot.dart';
 import '../models/parking_summary.dart';
+import '../models/reservation.dart';
 import '../repositories/parking_repository.dart';
 
 class ParkingProvider extends ChangeNotifier {
@@ -13,18 +14,15 @@ class ParkingProvider extends ChangeNotifier {
 
   ParkingSummary? _summary;
   bool _isSummaryLoading = false;
-
   List<ParkingSlot> _slots = <ParkingSlot>[];
   bool _isSlotsLoading = false;
-
   String _selectedFloor = '1';
   String? _selectedSlotId;
-
-  // Reservation state
   bool _isReserving = false;
   String? _reservationError;
+  List<Reservation> _reservations = [];
+  bool _isReservationsLoading = false;
 
-  // Getters
   ParkingSummary? get summary => _summary;
   bool get isSummaryLoading => _isSummaryLoading;
   List<ParkingSlot> get slots => _slots;
@@ -33,6 +31,8 @@ class ParkingProvider extends ChangeNotifier {
   String? get selectedSlotId => _selectedSlotId;
   bool get isReserving => _isReserving;
   String? get reservationError => _reservationError;
+  List<Reservation> get reservations => _reservations;
+  bool get isReservationsLoading => _isReservationsLoading;
 
   void setFloor(String floor) {
     _selectedFloor = ((int.tryParse(floor) ?? 0) + 1).toString();
@@ -68,11 +68,7 @@ class ParkingProvider extends ChangeNotifier {
   }
 
   void selectSlot(String slotId) {
-    if (_selectedSlotId == slotId) {
-      _selectedSlotId = null;
-    } else {
-      _selectedSlotId = slotId;
-    }
+    _selectedSlotId = _selectedSlotId == slotId ? null : slotId;
     notifyListeners();
   }
 
@@ -87,10 +83,8 @@ class ParkingProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final result = await _parkingRepository.reserveSlot(
-        slotId: slotId,
-        licensePlate: licensePlate,
-        startTime: startTime,
-        endTime: endTime,
+        slotId: slotId, licensePlate: licensePlate,
+        startTime: startTime, endTime: endTime,
       );
       await loadSlots();
       return result;
@@ -101,6 +95,63 @@ class ParkingProvider extends ChangeNotifier {
     } finally {
       _isReserving = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> loadReservations() async {
+    _isReservationsLoading = true;
+    notifyListeners();
+    try {
+      _reservations = await _parkingRepository.fetchReservations();
+    } catch (e) {
+      if (kDebugMode) print('Reservations Error: $e');
+    } finally {
+      _isReservationsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Force cleanup expired reservations then reload everything
+  Future<void> handleReservationExpired() async {
+    if (kDebugMode) print('🔄 Forcing cleanup of expired reservations...');
+    try {
+      // Step 1: Tell backend to cleanup NOW
+      await _parkingRepository.cleanupExpired();
+      if (kDebugMode) print('✅ Backend cleanup done');
+    } catch (e) {
+      if (kDebugMode) print('⚠️ Cleanup call failed: $e');
+    }
+    // Step 2: Reload everything
+    await loadReservations();
+    await loadSlots();
+    await loadSummary();
+    if (kDebugMode) print('✅ All data refreshed');
+  }
+
+  Future<bool> cancelReservation(int reservationId) async {
+    try {
+      final success = await _parkingRepository.cancelReservation(reservationId);
+      if (success) {
+        await loadReservations();
+        await loadSlots();
+      }
+      return success;
+    } catch (e) {
+      if (kDebugMode) print('Cancel Error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> extendReservation(int reservationId, int extendMinutes) async {
+    try {
+      final success = await _parkingRepository.extendReservation(reservationId, extendMinutes);
+      if (success) {
+        await loadReservations();
+      }
+      return success;
+    } catch (e) {
+      if (kDebugMode) print('Extend Error: $e');
+      return false;
     }
   }
 }

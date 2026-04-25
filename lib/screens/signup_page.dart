@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
-import '../parking_page.dart';
+import '../providers/locale_provider.dart';
+import '../utils/app_strings.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -19,9 +20,9 @@ class _SignupPageState extends State<SignupPage> {
   final _confirmPasswordController = TextEditingController();
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
 
-  final Color _primaryGreen = const Color(0xFF14C8A1);
-  final Color _accentYellow = const Color(0xFFFFE081);
   static const int _minPasswordLength = 8;
 
   @override
@@ -51,11 +52,10 @@ class _SignupPageState extends State<SignupPage> {
     if (!mounted) return;
 
     if (success) {
-      // After successful signup, go back to the login page.
       Navigator.of(context).pop();
     } else if (auth.errorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(auth.errorMessage!)),
+        SnackBar(content: Text(auth.errorMessage!), backgroundColor: Colors.red),
       );
     }
   }
@@ -63,235 +63,201 @@ class _SignupPageState extends State<SignupPage> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final theme = Theme.of(context);
+    final lang = context.watch<LocaleProvider>().locale.languageCode;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Create Account'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 20),
-            Text(
-              'Welcome to Parking',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: _primaryGreen,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Create an account to book your parking slots.',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    _TextField(
-                      controller: _usernameController,
-                      label: 'Username',
-                      icon: Icons.person,
-                      validator: (val) =>
-                          (val == null || val.trim().isEmpty) ? 'Enter username' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    _TextField(
-                      controller: _firstNameController,
-                      label: 'First name',
-                      icon: Icons.badge,
-                      validator: (val) =>
-                          (val == null || val.trim().isEmpty) ? 'Enter first name' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    _TextField(
-                      controller: _lastNameController,
-                      label: 'Last name',
-                      icon: Icons.badge_outlined,
-                      validator: (val) =>
-                          (val == null || val.trim().isEmpty) ? 'Enter last name' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    _TextField(
-                      controller: _emailController,
-                      label: 'Email',
-                      icon: Icons.email,
-                      keyboardType: TextInputType.emailAddress,
-                      validator: (val) =>
-                          (val == null || !val.contains('@')) ? 'Enter valid email' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    _TextField(
-                      controller: _passwordController,
-                      label: 'Password',
-                      icon: Icons.lock,
-                      obscureText: true,
-                      validator: (val) {
-                        final v = val ?? '';
-                        if (v.isEmpty) return 'Enter password';
-                        if (v.length < _minPasswordLength) {
-                          return 'Must be at least $_minPasswordLength characters';
-                        }
-                        final isAllDigits = RegExp(r'^\d+$').hasMatch(v);
-                        if (isAllDigits) {
-                          return 'Password can’t be numbers only';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Password rules:\n'
-                        '- At least $_minPasswordLength characters\n'
-                        '- Not numbers only\n'
-                        '- Avoid common passwords (e.g. 12345678)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade700,
-                          height: 1.3,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _TextField(
-                      controller: _confirmPasswordController,
-                      label: 'Confirm password',
-                      icon: Icons.lock_outline,
-                      obscureText: true,
-                      validator: (val) {
-                        if (val == null || val.isEmpty) {
-                          return 'Confirm your password';
-                        }
-                        if (val != _passwordController.text) {
-                          return 'Passwords do not match';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    if (auth.errorMessage != null) ...[
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          auth.errorMessage!,
-                          style: const TextStyle(color: Colors.red, fontSize: 12),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _primaryGreen,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: auth.isLoading ? null : _onSignup,
-                        child: auth.isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text(
-                                'Sign Up',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                              ),
-                      ),
-                    ),
-                  ],
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 20),
+              // Back button
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: Icon(Icons.arrow_back_ios, color: theme.textTheme.bodyLarge?.color),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text(
-                'Already have an account? Log in',
-                style: TextStyle(color: _accentYellow),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.person_add_alt_1_rounded,
+                    size: 50, color: theme.colorScheme.primary),
               ),
-            ),
-          ],
+              const SizedBox(height: 20),
+              Text(
+                AppStrings.get('welcomeToParking', lang),
+                style: theme.textTheme.headlineLarge,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                AppStrings.get('createAccountSubtitle', lang),
+                style: theme.textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: theme.cardColor,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: theme.dividerColor),
+                ),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      TextFormField(
+                        controller: _usernameController,
+                        style: TextStyle(color: theme.textTheme.bodyLarge?.color),
+                        decoration: InputDecoration(
+                          labelText: AppStrings.get('username', lang),
+                          prefixIcon: Icon(Icons.person, color: theme.colorScheme.primary),
+                        ),
+                        validator: (val) =>
+                            (val == null || val.trim().isEmpty) ? 'Enter username' : null,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _firstNameController,
+                              style: TextStyle(color: theme.textTheme.bodyLarge?.color),
+                              decoration: InputDecoration(
+                                labelText: AppStrings.get('firstName', lang),
+                                prefixIcon: Icon(Icons.badge, color: theme.colorScheme.primary),
+                              ),
+                              validator: (val) =>
+                                  (val == null || val.trim().isEmpty) ? 'Required' : null,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _lastNameController,
+                              style: TextStyle(color: theme.textTheme.bodyLarge?.color),
+                              decoration: InputDecoration(
+                                labelText: AppStrings.get('lastName', lang),
+                                prefixIcon: Icon(Icons.badge_outlined, color: theme.colorScheme.primary),
+                              ),
+                              validator: (val) =>
+                                  (val == null || val.trim().isEmpty) ? 'Required' : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        style: TextStyle(color: theme.textTheme.bodyLarge?.color),
+                        decoration: InputDecoration(
+                          labelText: AppStrings.get('email', lang),
+                          prefixIcon: Icon(Icons.email_outlined, color: theme.colorScheme.primary),
+                        ),
+                        validator: (val) =>
+                            (val == null || !val.contains('@')) ? 'Enter valid email' : null,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _passwordController,
+                        obscureText: _obscurePassword,
+                        style: TextStyle(color: theme.textTheme.bodyLarge?.color),
+                        decoration: InputDecoration(
+                          labelText: AppStrings.get('password', lang),
+                          prefixIcon: Icon(Icons.lock_outline, color: theme.colorScheme.primary),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility,
+                                color: theme.textTheme.bodySmall?.color),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
+                        ),
+                        validator: (val) {
+                          final v = val ?? '';
+                          if (v.isEmpty) return 'Enter password';
+                          if (v.length < _minPasswordLength) {
+                            return 'Must be at least $_minPasswordLength characters';
+                          }
+                          if (RegExp(r'^\d+$').hasMatch(v)) {
+                            return 'Password can\'t be numbers only';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _confirmPasswordController,
+                        obscureText: _obscureConfirm,
+                        style: TextStyle(color: theme.textTheme.bodyLarge?.color),
+                        decoration: InputDecoration(
+                          labelText: AppStrings.get('confirmPassword', lang),
+                          prefixIcon: Icon(Icons.lock_outline, color: theme.colorScheme.primary),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility,
+                                color: theme.textTheme.bodySmall?.color),
+                            onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+                          ),
+                        ),
+                        validator: (val) {
+                          if (val == null || val.isEmpty) return 'Confirm your password';
+                          if (val != _passwordController.text) return 'Passwords do not match';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      if (auth.errorMessage != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(auth.errorMessage!,
+                              style: const TextStyle(color: Colors.red, fontSize: 13)),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: auth.isLoading ? null : _onSignup,
+                          child: auth.isLoading
+                              ? const SizedBox(
+                                  width: 20, height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : Text(AppStrings.get('signup', lang),
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(
+                  AppStrings.get('haveAccount', lang),
+                  style: TextStyle(color: theme.colorScheme.secondary, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
-
-class _TextField extends StatelessWidget {
-  const _TextField({
-    required this.controller,
-    required this.label,
-    required this.icon,
-    this.keyboardType,
-    this.obscureText = false,
-    this.validator,
-  });
-
-  final TextEditingController controller;
-  final String label;
-  final IconData icon;
-  final TextInputType? keyboardType;
-  final bool obscureText;
-  final String? Function(String?)? validator;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      obscureText: obscureText,
-      validator: validator,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: const Color(0xFF14C8A1)),
-        filled: true,
-        fillColor: Colors.grey.shade100,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-      ),
-    );
-  }
-}
-
-

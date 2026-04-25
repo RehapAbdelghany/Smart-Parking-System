@@ -11,13 +11,18 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
   double carPosition = -150;
   final SecureStorageService _storage = SecureStorageService();
+  late AnimationController _fadeController;
 
   @override
   void initState() {
     super.initState();
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..forward();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       setState(() {
@@ -25,10 +30,15 @@ class _SplashScreenState extends State<SplashScreen> {
       });
     });
 
-    // بعد 3 ثواني شيك على الـ Token
     Timer(const Duration(seconds: 3), () {
       _checkAuthAndNavigate();
     });
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
   }
 
   Future<void> _checkAuthAndNavigate() async {
@@ -37,13 +47,11 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
 
     if (token != null && token.isNotEmpty) {
-      // ✅ في Token محفوظ → روح ParkingPage على طول
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const ParkingPage()),
       );
     } else {
-      // ❌ مفيش Token → روح Login
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const LoginPage()),
@@ -53,12 +61,18 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: isDark ? const Color(0xFF0A0E21) : Colors.white,
       body: Stack(
         children: [
           Center(
-            child: Image.asset('assets/logo.png', width: 300, height: 300),
+            child: FadeTransition(
+              opacity: _fadeController,
+              child: Image.asset('assets/logo.png', width: 300, height: 300),
+            ),
           ),
           AnimatedPositioned(
             duration: const Duration(seconds: 2),
