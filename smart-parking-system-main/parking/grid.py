@@ -47,14 +47,14 @@ def build_garage_grid():
     for r in range(1, 51):
         grid[r][0] = f"A{r}"
 
-    # ── B slots: col=2, rows 2-18 ────────────────────────────
-    # B1 → row=2 ... B17 → row=18
-    for i in range(1, 18):         # i = slot number
+    # ── B slots: col=2, rows 2-21 ────────────────────────────
+    # B1 → row=2 ... B17 → row=21
+    for i in range(1, 21):         # i = slot number
         grid[i + 1][2] = f"B{i}"  # row = i+1
 
-    # ── C slots: col=3, rows 2-18 ────────────────────────────
-    # C1 → row=2 ... C17 → row=18
-    for i in range(1, 18):
+    # ── C slots: col=3, rows 2-21 ────────────────────────────
+    # C1 → row=2 ... C17 → row=21
+    for i in range(1, 21):
         grid[i + 1][3] = f"C{i}"
 
     # ── D slots: col=5, rows 1-45 ────────────────────────────
@@ -75,12 +75,12 @@ def build_slot_coordinates():
     for r in range(1, 51):
         coords[f"A{r}"] = (r, 0)
 
-    # B1-B17 → col=2, row=2..18
-    for i in range(1, 18):
+    # B1-B17 → col=2, row=2..21 
+    for i in range(1, 21):
         coords[f"B{i}"] = (i + 1, 2)
 
-    # C1-C17 → col=3, row=2..18
-    for i in range(1, 18):
+    # C1-C17 → col=3, row=2..21
+    for i in range(1, 21):
         coords[f"C{i}"] = (i + 1, 3)
 
     # D1-D45 → col=5, row=1..45

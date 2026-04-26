@@ -442,4 +442,34 @@ class UpdateEntryEmbeddingAPIView(APIView):
             "status": "success",
             "license_plate": last_vehicle.license_plate,
             "message": f"Embedding updated to top-view for vehicle {last_vehicle.license_plate}"
+
+
+
+# parking/views.py
+
+class UserCurrentLocationAPIView(APIView):
+    """
+    API مخصص لتطبيق فلاتر: يرجع مكان العربية الحالي بناءً على آخر كاميرا شافتها.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, plate_number):
+        # البحث عن سجل السيارة اللي لسه جوه الجراج
+        log = get_object_or_404(VehicleLog, license_plate=plate_number, is_inside=True)
+        
+        if not log.last_camera:
+            return Response({
+                "error": "Vehicle detected at entrance but not yet tracked by internal cameras."
+            }, status=404)
+
+        camera = log.last_camera
+        
+        return Response({
+            "license_plate": log.license_plate,
+            "current_position": {
+                "row": camera.row,
+                "col": camera.col,
+                "zone": camera.zone_name
+            },
+            "last_seen": log.last_seen.strftime('%H:%M:%S')
         }, status=200)

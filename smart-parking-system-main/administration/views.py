@@ -8,6 +8,9 @@ from django.db.models.functions import TruncDay, TruncMonth, TruncHour
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
 
 from parking.models import ParkingSlot, VehicleLog, Reservation
 from .serializers import (
@@ -388,3 +391,12 @@ class AdminReservationListAPIView(ListAPIView):
             qs = qs.filter(is_active=False)
 
         return qs
+
+
+@login_required
+@ensure_csrf_cookie  
+def admin_dashboard_view(request):
+    if not request.user.is_staff:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Admins only.")
+    return render(request, 'administration/dashboard.html')

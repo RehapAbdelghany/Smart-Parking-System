@@ -67,14 +67,12 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # ===== DATABASE (single — reads from .env) =====
 DATABASES = {
     'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': 'smart_parking_db',   
-            'USER': 'postgres',    
-
-            'PASSWORD': '0000',    
-            'HOST': '127.0.0.1',            # لأنها على جهازك حالياً
-            'PORT': '5432',                 # بورت البوستجرس الافتراضي
-    
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME', 'smart_parking_db'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'OmarAssem2030'),
+        'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+        'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
 
@@ -94,11 +92,14 @@ SIMPLE_JWT = {
 # ===== REST FRAMEWORK =====
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.SessionAuthentication',  # ← required for admin dashboard
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+
+    
 }
 
 # ===== INTERNATIONALIZATION =====
