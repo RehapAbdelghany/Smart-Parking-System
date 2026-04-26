@@ -3,7 +3,8 @@ from .models import VehicleLog, ParkingSlot, Reservation
 
 class VehicleEntrySerializer(serializers.ModelSerializer):
     # استقبال البصمة كقائمة أرقام (للقراءة فقط من جانب السيرفر)
-    car_embedding = serializers.ListField(child=serializers.FloatField(), write_only=True)
+    car_embedding = serializers.ListField(child=serializers.FloatField(), write_only=True ,required=False,  # Add this line
+        allow_null=True)
     
     class Meta:
         model = VehicleLog

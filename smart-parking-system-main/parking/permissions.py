@@ -8,7 +8,7 @@ class IsCameraNode(permissions.BasePermission):
     def has_permission(self, request, view):
         secret_key = os.getenv('CAMERA_SECRET_KEY', 'my_ultra_secure_camera_token_2026')
         # التأكد من وجود الـ Header ومطابقته
-        client_key = request.headers.get('X-Camera-Key')
+        client_key = request.headers.get('X-camera-Key')
         return client_key == secret_key
 
 class IsOwnerOrAdmin(permissions.BasePermission):
