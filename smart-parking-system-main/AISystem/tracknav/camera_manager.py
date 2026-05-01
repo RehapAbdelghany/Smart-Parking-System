@@ -39,10 +39,8 @@ class CameraManager:
         while self.running:
             grabbed = cap.grab()
             frame_counter += 1
-
-            if frame_counter % 2 != 0: # Skipping (معالجة فريم وفريم لا)
-              continue
-
+            if frame_counter % 2 != 0:
+                continue
 
             if not grabbed:
                 print(f"[RECONNECT] Cam {cam_id} lost... reconnecting")
@@ -50,16 +48,12 @@ class CameraManager:
                 time.sleep(1)
                 cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
                 continue
-
-
-
             ret, frame = cap.retrieve()
 
             if not ret or frame is None:
                 continue
 
-            # Resize (optional but recommended)
-            frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
+            # frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
 
             # ❗ Filter gray / corrupted frames
             if frame.mean() < 20:
@@ -79,10 +73,6 @@ class CameraManager:
         return None
 
 
-# ==============================================================
-# GLOBAL SINGLETON
-# ==============================================================
-
 _cm_instance = None
 
 
@@ -92,7 +82,6 @@ def get_camera_manager():
         _cm_instance = CameraManager()
         _cm_instance.start_all()
     return _cm_instance
-
 
 def get_shared_frame(cam_id):
     global _cm_instance

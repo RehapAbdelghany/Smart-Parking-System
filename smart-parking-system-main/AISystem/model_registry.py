@@ -4,13 +4,12 @@ model_registry.py
 Loads CLIP and OSNet exactly once per process and shares them across
 every VehicleTracker instance.  Thread-safe via a module-level lock.
 """
-
+import torch.nn as nn
 import threading
 import torch
 from transformers import CLIPModel, CLIPProcessor
 import torchreid
-
-
+from torchvision import models
 class _ModelRegistry:
     _instance = None
     _lock = threading.Lock()
@@ -48,6 +47,19 @@ class _ModelRegistry:
                 name="osnet_x1_0", num_classes=1000, pretrained=True
             )
             self.reid_model.eval().to(self.device)
+
+            self.color_model = models.mobilenet_v2(weights=None)
+
+            num_ftrs = self.color_model.classifier[1].in_features
+            self.color_model.classifier[1] = nn.Sequential(
+                nn.Dropout(0.3),
+                nn.Linear(num_ftrs, 15)  # Ensure this matches your number of classes
+            )
+
+            # 2. Load the Saved Weights
+            self.color_model.load_state_dict(torch.load('../car_color_refined.pth', map_location=device))
+            self.color_model.to(self.device)
+            self.color_model.eval()
 
             self._initialized = True
             print("[ModelRegistry] All models ready.")
