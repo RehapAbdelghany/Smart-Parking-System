@@ -19,11 +19,12 @@ from .pathfinding import astar, get_road_cell_next_to_slot
 from .permissions import IsCameraNode, IsOwnerOrAdmin
 from .grid import GARAGE_GRID, SLOT_COORDINATES
 
-import uuid
-import numpy as np
-import math
-from datetime import timedelta
 from django.utils import timezone
+from datetime import timedelta
+
+import numpy as np
+import uuid
+import math
 
 ENTRANCE = (0, 1)   # ENTER cell
 
@@ -157,26 +158,45 @@ class VehicleExitAPIView(APIView):
             }, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-# --- 2. تحديث الحالات من كاميرات الـ Slots ---
 
 class BulkSlotUpdateAPIView(APIView):
+    """
+    تحديث جماعي لحالة الركنات من كاميرات الماشين ليرنينج.
+    تطبق منطق الربط الذكي: الكاميرا تكسر الحجز لو وجدت سيارة، 
+    وتحترم الحجز لو الركنة فارغة.
+    """
     permission_classes = [IsCameraNode]
+
     def post(self, request):
         data = request.data
         if not isinstance(data, list):
             return Response({"error": "Expected a list of slots"}, status=400)
+
         updated_slots = []
         for item in data:
             slot_no = item.get('slot_id')
-            occupied = item.get('is_occupied')
-            new_status = 'occupied' if occupied else 'available'
-            # لا نحدث الحالة لو كانت محجوزة يدوياً إلا لو ركنت فعلاً
-            count = ParkingSlot.objects.filter(slot_number=slot_no).exclude(status='reserved').update(status=new_status)
+            is_occupied = item.get('is_occupied')
+
+            if is_occupied:
+                # 1. الماشين شافت عربية: حدث الحالة فوراً مهما كانت الحالة السابقة
+                # هنا بنشيل الـ .exclude(status='reserved') لأن الواقع بيقول إن فيه عربية ركنت
+                count = ParkingSlot.objects.filter(slot_number=slot_no).update(status='occupied')
+            else:
+                # 2. الماشين شافت الركنة فاضية: 
+                # رجعها available "فقط" لو مكنتش محجوزة (reserved)
+                # عشان لو حد حاجز لسه مجاش، الماشين ما تفتحهاش لحد تاني
+                count = ParkingSlot.objects.filter(
+                    slot_number=slot_no
+                ).exclude(status='reserved').update(status='available')
+
             if count > 0:
                 updated_slots.append(slot_no)
-        return Response({"status": "success", "updated_slots": updated_slots})
 
-# --- 3. الـ APIs الخاصة بتطبيق الموبايل (التعديل هنا) ---
+        return Response({
+            "status": "success", 
+            "updated_slots": updated_slots,
+            "message": "Real-time sync completed with smart reservation protection."
+        })
 
 class ParkingStatusAPIView(APIView):
     """
@@ -198,24 +218,73 @@ class ParkingStatusAPIView(APIView):
 
 class ParkingSlotListAPIView(ListAPIView):
     """
-    عرض قائمة الركنات للمستخدمين المسجلين.
+    عرض قائمة الركنات للمستخدمين مع تحرير تلقائي للحجوزات المنتهية.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]  # السماح للجميع برؤية قائمة الركنات
     serializer_class = SlotDisplaySerializer
 
     def get_queryset(self):
+        # 1. تحديث الحجوزات المنتهية قبل عرض البيانات
+        self._expire_old_reservations()
+
+        # 2. جلب البيانات الأساسية
         queryset = ParkingSlot.objects.all().order_by('slot_number')
+
+        # 3. الفلترة حسب الحالة (status) إذا وجدت
         status_param = self.request.query_params.get('status')
         if status_param:
             queryset = queryset.filter(status=status_param)
+
+        # 4. الفلترة حسب الطابق (floor) - إضافة مطور الفلاتر
+        floor_param = self.request.query_params.get("floor")
+        if floor_param:
+            try:
+                queryset = queryset.filter(floor=int(floor_param))
+            except ValueError:
+                pass # لو المطور بعت قيمة غير رقمية ميعملش Crash
+
         return queryset
+
+    def _expire_old_reservations(self):
+        """تحرير الـ Slots المنتهية بكفاءة عالية"""
+        now = timezone.now()
+        print(f"--- DEBUG: Current Time is {now} ---")
+        # نجيب كل الحجوزات اللي وقتها خلص ولسه active
+        expired_res = Reservation.objects.filter(
+            is_active=True,
+            end_time__lt=now
+        )
+
+        if expired_res.exists():
+            # تحديث حالة الـ Slots المرتبطة بالحجوزات دي (فقط لو كانت 'reserved')
+            # بنستخدم الفلتر ده عشان لو السيارة ركنت فعلاً (occupied) ميرجعهاش available
+            slot_ids = expired_res.values_list('slot_id', flat=True)
+            ParkingSlot.objects.filter(
+                id__in=slot_ids, 
+                # status='reserved'
+            ).update(status='available')
+
+            # إغلاق الحجوزات دفعة واحدة
+            expired_res.update(is_active=False)
 
 class CreateReservationAPIView(APIView):
     permission_classes = [IsAuthenticated]
+
     def post(self, request):
         serializer = ReservationSerializer(data=request.data)
         if serializer.is_valid():
             slot = serializer.validated_data['slot']
+
+            # ✅ شيك الأول لو في حجز منتهي على الـ Slot ده
+            now = timezone.now()
+            expired = Reservation.objects.filter(
+                slot=slot, is_active=True, end_time__lt=now
+            )
+            if expired.exists():
+                expired.update(is_active=False)
+                slot.status = 'available'
+                slot.save()
+
             if slot.status != 'available':
                 return Response({"error": "Slot is not available"}, status=400)
 
@@ -228,7 +297,9 @@ class CreateReservationAPIView(APIView):
             return Response({
                 "message": "Reservation successful",
                 "code": reservation.reservation_code,
-                "slot": slot.slot_number
+                "slot": slot.slot_number,
+                "start_time": reservation.start_time.isoformat(),
+                "end_time": reservation.end_time.isoformat(),
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -442,12 +513,10 @@ class UpdateEntryEmbeddingAPIView(APIView):
             "status": "success",
             "license_plate": last_vehicle.license_plate,
             "message": f"Embedding updated to top-view for vehicle {last_vehicle.license_plate}"
-
-
-
-# parking/views.py
+        }, status=200)
 
 class UserCurrentLocationAPIView(APIView):
+
     """
     API مخصص لتطبيق فلاتر: يرجع مكان العربية الحالي بناءً على آخر كاميرا شافتها.
     """
@@ -473,3 +542,61 @@ class UserCurrentLocationAPIView(APIView):
             },
             "last_seen": log.last_seen.strftime('%H:%M:%S')
         }, status=200)
+
+class CancelReservationAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, reservation_id):
+        try:
+            reservation = Reservation.objects.get(
+                id=reservation_id, user=request.user
+            )
+        except Reservation.DoesNotExist:
+            return Response({"error": "Reservation not found"}, status=404)
+
+        if not reservation.is_active:
+            return Response({"error": "Reservation is already cancelled"}, status=400)
+
+        reservation.is_active = False
+        reservation.save()
+
+        slot = reservation.slot
+        if slot.status == 'reserved':
+            slot.status = 'available'
+            slot.save()
+
+        return Response({"message": "Reservation cancelled successfully"})
+
+class ExtendReservationAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, reservation_id):
+        try:
+            reservation = Reservation.objects.get(
+                id=reservation_id, user=request.user, is_active=True
+            )
+        except Reservation.DoesNotExist:
+            return Response({"error": "Active reservation not found"}, status=404)
+
+        now = timezone.now()
+        if reservation.end_time < now:
+            return Response({"error": "Reservation already expired"}, status=400)
+
+        extend_minutes = request.data.get('extend_minutes', 30)
+        try:
+            extend_minutes = int(extend_minutes)
+        except (ValueError, TypeError):
+            return Response({"error": "Invalid extend_minutes"}, status=400)
+
+        if extend_minutes < 1 or extend_minutes > 480:
+            return Response({"error": "Extension must be between 1 and 480 minutes"}, status=400)
+
+        from datetime import timedelta
+        reservation.end_time += timedelta(minutes=extend_minutes)
+        reservation.save()
+
+        return Response({
+            "message": f"Reservation extended by {extend_minutes} minutes",
+            "new_end_time": reservation.end_time.isoformat(),
+        })
+

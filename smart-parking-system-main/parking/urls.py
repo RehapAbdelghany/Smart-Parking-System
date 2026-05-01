@@ -1,13 +1,15 @@
 from django.urls import path
-from .views import VehicleEntryAPIView, navigation_view
+from .views import navigation_view
 from .views import VehicleExitAPIView
-from .views import BulkSlotUpdateAPIView
+from .views import VehicleEntryAPIView
 from .views import ParkingStatusAPIView
-from .views import ParkingSlotListAPIView
-from .views import CreateReservationAPIView
+from .views import BulkSlotUpdateAPIView
 from .views import VehicleTrackingAPIView
+from .views import ParkingSlotListAPIView
+from .views import ExtendReservationAPIView
+from .views import CancelReservationAPIView
+from .views import CreateReservationAPIView
 from .views import UserCurrentLocationAPIView
-
 from .views import UpdateEntryEmbeddingAPIView
 
 urlpatterns = [
@@ -26,4 +28,6 @@ urlpatterns = [
 
     path('api/update-perspective/', UpdateEntryEmbeddingAPIView.as_view(), name='update_perspective'),
 
+    path('api/reservations/<int:reservation_id>/cancel/', CancelReservationAPIView.as_view(), name='cancel-reservation'),
+    path('api/reservations/<int:reservation_id>/extend/', ExtendReservationAPIView.as_view(), name='extend-reservation'),
 ]
