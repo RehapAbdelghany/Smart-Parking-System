@@ -1,3 +1,4 @@
+import json
 import threading
 import cv2
 import time
@@ -6,14 +7,30 @@ from config import CAMERA_URLS, FRAME_WIDTH, FRAME_HEIGHT
 
 
 class CameraManager:
-    def __init__(self):
+    def __init__(self,json_path):
         # cam_id -> (frame, timestamp)
+        self.json_path = json_path
+        self.camera_configs = self._load_config()
         self.frames = {}
-        self.locks = {i: threading.Lock() for i in range(len(CAMERA_URLS))}
+        self.locks = {cam_id: threading.Lock() for cam_id in self.camera_configs.keys()}
         self.running = True
 
+    def _load_config(self):
+        try:
+            with open(self.json_path, 'r') as f:
+                data = json.load(f)
+                # تحويل المفاتيح لـ strings أو integers حسب حاجتك، هنا هنستخدمها كـ keys
+                return data
+        except Exception as e:
+            print(f"[ERROR] Failed to load JSON config: {e}")
+            return {}
     def start_all(self):
-        for cam_id, source in enumerate(CAMERA_URLS):
+        if not self.camera_configs:
+            print("[ERROR] No cameras found in config.")
+            return
+
+        for cam_id, config in self.camera_configs.items():
+            source = config['source']
             t = threading.Thread(
                 target=self._reader,
                 args=(cam_id, source),
@@ -21,7 +38,7 @@ class CameraManager:
             )
             t.start()
 
-        print(f"[SYSTEM] Camera Manager Active ({len(CAMERA_URLS)} cameras)")
+        print(f"[SYSTEM] Camera Manager Active ({len(self.camera_configs)} cameras)")
 
     def _reader(self, cam_id, source):
 
@@ -66,6 +83,7 @@ class CameraManager:
 
 
     def get_frame(self, cam_id):
+        cam_id = str(cam_id)
         lock = self.locks.get(cam_id)
         if lock:
             with lock:
@@ -76,10 +94,10 @@ class CameraManager:
 _cm_instance = None
 
 
-def get_camera_manager():
+def get_camera_manager(config_path="cameras_config.json"):
     global _cm_instance
     if _cm_instance is None:
-        _cm_instance = CameraManager()
+        _cm_instance = CameraManager(config_path)
         _cm_instance.start_all()
     return _cm_instance
 

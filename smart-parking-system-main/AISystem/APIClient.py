@@ -1,5 +1,7 @@
 import cv2
+import numpy as np
 import requests
+from sympy.codegen.ast import continue_
 
 from AISystem.EntranceExitGates.CarDetails import CarDetails
 
@@ -8,7 +10,7 @@ class APIClient:
 
     def __init__(self, base_url):
         self.base_url = base_url
-        self.HEADERS = {'X-AISystem-Key': 'my_ultra_secure_camera_token_2026'}
+        self.HEADERS = {'X-Camera-Key': 'my_ultra_secure_camera_token_2026'}
     def send_to_entrance(self,image, plate_text):
         success, img_encoded = cv2.imencode(".jpg", image)
         if not success:
@@ -44,7 +46,6 @@ class APIClient:
                 print("❌ Backend error:", response.text)
         except requests.exceptions.RequestException as e:
             print("❌ Request failed:", str(e))
-
 
     def send_to_exit(self,image, plate_text):
         success, img_encoded = cv2.imencode(".jpg", image)
@@ -89,14 +90,19 @@ class APIClient:
         elif self.base_url.endswith("/exit/"):
             self.end_to_exit(image,plate_text)
 
-    def send_embeddings(self,embeddings):
+    def send_embeddings(self,embedding):
+        base_url = "http://127.0.0.1:8000/api/update-perspective/"
+        print(embedding)
+        if embedding is None or len(embedding) == 0 :
+            print("NO embeddings in send_embeddings method")
+            return
         data = {
-            "car_embedding": embeddings.tolist(),
+            "car_embedding": embedding,
             "camera_id": 2
         }
         try:
             response = requests.post(
-                self.base_url,
+                base_url,
                 json=data,
                 headers=self.HEADERS
             )
@@ -107,6 +113,13 @@ class APIClient:
         except requests.exceptions.RequestException as e:
             print("❌ Request failed:", str(e))
     def send_tracking_embeddings(self,color,embedding,camera_id):
+        print(camera_id)
+        if embedding is None or len(embedding) == 0:
+            print("NO embeddings in send_embeddings method")
+            return
+        if int(camera_id) ==2:
+            self.send_embeddings(embedding)
+            return
         payload = {
             "car_embedding": embedding,
             "camera_id": camera_id,

@@ -16,11 +16,10 @@ from AISystem.tracknav.trackpercamera import PerCameraTracker
 
 
 class VehicleTracker:
-    MOVE_THRESHOLD = 5
-    MIN_HISTORY = 2
+    MOVE_THRESHOLD = 0
+    MIN_HISTORY = 0
     STATIONARY_FRAMES_REQUIRED = 90
     STATIONARY_THRESHOLD = 5
-    MAX_EMBEDDINGS_PER_TRACK = 10
     MAX_DISAPPEARED = 50
 
     def __init__(self,  engine, camera_id, config_path="cameras_config.json"):
@@ -33,12 +32,16 @@ class VehicleTracker:
         self.roi_points = np.array(config['roi'], dtype=np.int32)
         self.original_height = 0
         self.original_width =0
-        self.MAX_DISAPPEARED = 30
+        self.MAX_DISAPPEARED = 10
         self.disappeared_count = defaultdict(int)
         self.engine = engine
         self.MAX_STATIONARY_FRAMES = 60
+        self.max_embeddings_per_track = 3
+        if int(self.camera_id) == 2:
+            self.max_embeddings_per_track = 1
 
         self.window_name = f"Tracking - {self.camera_id}"
+
 
         ModelRegistry.initialize()
         self.device = ModelRegistry.device
@@ -179,21 +182,35 @@ class VehicleTracker:
         return emb / (np.linalg.norm(emb) + 1e-6)
 
     def _finalize_track(self, track_id: int):
-        print(
-            f"[FINALIZE] track_id={track_id}, embeddings={len(self.track_embeddings[track_id])}, color={self.track_colors.get(track_id)}")
         if track_id in self.finalized_ids:
             return
+
         embs = self.track_embeddings.get(track_id)
+
+        # ✅ التغيير: لو مفيش embeddings خالص، حاول تاخد embedding أخير من الـ frame الحالية
         if not embs:
+            print(f"[FINALIZE WARNING] track_id={track_id} has no embeddings, skipping send.")
+            self.finalized_ids.add(track_id)
             return
+
         self.finalized_ids.add(track_id)
         avg_emb = np.array(embs).mean(axis=0)
         avg_emb /= (np.linalg.norm(avg_emb) + 1e-6)
         color = self.track_colors.get(track_id, "unknown")
-        print(f"[Tracker {self.camera_id}] Finalized ID {track_id} | Color: {color}")
+
+        print(f"[Tracker {self.camera_id}] Finalized ID {track_id} | Color: {color} | Embeddings: {len(embs)}")
         self.api.send_tracking_embeddings(color, avg_emb.tolist(), self.camera_id)
+    def _inside_roi_for_embeddings(self, x1, y1, x2, y2):
+        center_x = (x1 + x2) // 2
+        center_y = (y1 + y2) // 2
+
+        is_inside = cv2.pointPolygonTest(self.roi_points, (float(center_x), float(center_y)), False) >= 0
+
+        return is_inside
 
     def is_inside_roi(self, x1, y1, x2, y2):
+        if int(self.camera_id) ==2:
+            return self._inside_roi_for_embeddings(x1, y1, x2, y2)
         points_to_check = [
             ((x1 + x2) // 2, y2),
             (x1, y1), (x2, y1), (x1, y2), (x2, y2),
@@ -230,73 +247,94 @@ class VehicleTracker:
         if results is None:
             return frame
 
-
         detections = self.extract_detections(results)
-
         tracks = self.tracker.update(detections, frame)
 
-        if results is not None and len(results) > 0:
+        if tracks is not None and len(tracks) > 0:
             for track in tracks:
                 if not track.is_activated:
                     continue
+
                 track_id = track.track_id
                 x1, y1, x2, y2 = map(int, track.tlbr)
 
+                # إذا تم إنهاء تتبعها مسبقاً، نتجاهلها
                 if track_id in self.finalized_ids:
                     continue
 
-                if not self.is_inside_roi(x1, y1, x2, y2):
-                    continue
+                # تحقق هل السيارة حالياً داخل الـ ROI؟
+                is_inside = self.is_inside_roi(x1, y1, x2, y2)
 
-                current_active_ids.add(track_id)
-                self.disappeared_count[track_id] = 0
+                if is_inside:
+                    # --- حالة السيارة داخل الـ ROI ---
+                    current_active_ids.add(track_id)
+                    self.disappeared_count[track_id] = 0
 
-                cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-                self.track_history[track_id].append((cx, cy))
+                    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                    self.track_history[track_id].append((cx, cy))
 
-                under_cap = len(self.track_embeddings[track_id]) < self.MAX_EMBEDDINGS_PER_TRACK
+                    under_cap = len(self.track_embeddings[track_id]) < self.max_embeddings_per_track
+                    if under_cap and (len(self.track_embeddings[track_id]) == 0 or self.frame_count % 2 == 0):
+                        x1p, y1p = max(0, x1 ), max(0, y1 )
+                        x2p, y2p = min(frame.shape[1], x2 ), min(frame.shape[0], y2 )
 
-                if under_cap and self.frame_count % 2 == 0:
-                    pad = 5
-                    x1p, y1p = max(0, x1 - pad), max(0, y1 - pad)
-                    x2p, y2p = min(frame.shape[1], x2 + pad), min(frame.shape[0], y2 + pad)
 
-                    if (x2p - x1p) * (y2p - y1p) > 2000:
                         crop = frame[y1p:y2p, x1p:x2p]
-                        self.track_embeddings[track_id].append(self.get_embedding(crop))
+
+                        if crop is None or crop.size == 0:
+                            continue
+                        emb = self.get_embedding(crop)
+                        if emb is not None:
+                            self.track_embeddings[track_id].append(emb)
                         if track_id not in self.track_colors:
-                            self.track_colors[track_id] = self.getColor(crop)
-                if self.is_currently_stationary(track_id):
-                    self.stationary_counter[track_id] += 1
+                           self.track_colors[track_id] = self.getColor(crop)
+                        if len(self.track_embeddings[track_id]) >= self.max_embeddings_per_track:
+                            print(f"[MAX EMB] Vehicle {track_id} reached max embeddings.")
+                            self._finalize_track(track_id)
+
+                    if self.is_currently_stationary(track_id):
+                        self.stationary_counter[track_id] += 1
+                    else:
+                        self.stationary_counter[track_id] = 0
+
+                    # رسم المربع للمركبات داخل الـ ROI فقط
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(frame, f"ID:{track_id} Embs:{len(self.track_embeddings[track_id])}",
+                                (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+                    if self.stationary_counter.get(track_id, 0) >= self.MAX_STATIONARY_FRAMES:
+                        self._finalize_track(track_id)
+
                 else:
-                    self.stationary_counter[track_id] = 0
 
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(frame, f"ID:{track_id} Embs:{len(self.track_embeddings[track_id])}",
-                            (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    if track_id not in current_active_ids:
+                        print(f"[EXIT] Vehicle {track_id} exited ROI area.")
+                        self._finalize_track(track_id)
 
+            # معالجة السيارات التي اختفت تماماً من الكاميرا (وليس فقط خرجت من الـ ROI)
             lost_ids = self.prev_active_ids - current_active_ids
+            # for tid in lost_ids:
+            #     self.disappeared_count[tid] += 1
+            #     if self.disappeared_count[tid] >= self.MAX_DISAPPEARED:
+            #         if tid not in self.finalized_ids:
+            #             print(f"[LOST] Vehicle {tid} disappeared from camera view.")
+            #             self._finalize_track(tid)
             for tid in lost_ids:
-                self.disappeared_count[tid] += 1
-                if self.disappeared_count[tid] >= self.MAX_DISAPPEARED:
-                    if tid not in self.finalized_ids:
-                        self._finalize_track(tid)
-            for tid in list(current_active_ids):
                 if tid not in self.finalized_ids:
-                    if self.stationary_counter.get(tid, 0) >= self.MAX_STATIONARY_FRAMES:
-                        self._finalize_track(tid)
+                    print(f"[LOST/EXIT] Vehicle {tid} lost or exited.")
+                    self._finalize_track(tid)
 
+            # تحديث قائمة السيارات النشطة للإطار القادم
             self.prev_active_ids = current_active_ids
 
+            # رسم منطقة الـ ROI والنقاط التفاعلية
             cv2.polylines(frame, [self.roi_points], True, (255, 0, 0), 3)
-
             for i, p in enumerate(self.roi_points):
                 color = (0, 0, 255) if i == self._selected_point else (255, 0, 0)
+                cv2.circle(frame, (int(p[0]), int(p[1])), 8, (255, 255, 255), -1)
+                cv2.circle(frame, (int(p[0]), int(p[1])), 8, color, 2)
 
-                cv2.circle(frame, (int(p[0]), int(p[1])), 8, (255, 255, 255), -1)  # خلفية بيضاء
-                cv2.circle(frame, (int(p[0]), int(p[1])), 8, color, 2)  # إطار ملون
             return frame
-
     def mouse_callback(self, event, x, y, flags, param):
         self._mouse_callback(event, x, y, flags, param)
 

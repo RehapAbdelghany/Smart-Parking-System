@@ -221,7 +221,8 @@ class BaseGate:
                         if best_frame is not None:
                             plate = self.detect_and_draw_plate(best_frame)
 
-                            print("Plate:", plate)
+                            if plate =='':
+                                plate = 'None'
                             # embedding = self.get_embedding(best_frame)
                             # print("Embedding:", embedding)
                             self.api.send_to_backend(best_frame, plate)
