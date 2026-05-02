@@ -39,7 +39,7 @@ class VehicleTracker:
         self.MAX_STATIONARY_FRAMES = 60
         self.max_embeddings_per_track = 5
         if int(self.camera_id) == 2:
-            self.max_embeddings_per_track = 1
+            self.max_embeddings_per_track = 2
         self.window_name = f"Tracking - {self.camera_id}"
         ModelRegistry.initialize()
         self.device = ModelRegistry.device
@@ -253,13 +253,18 @@ class VehicleTracker:
 
                         crop = inference_frame[y1p:y2p, x1p:x2p].copy()
 
+
                         if crop is not None and crop.size > 0:
-                            # self.save_crop_for_debug(crop)
-                            emb = self.get_embedding(crop)
-                            if emb is not None:
-                                self.track_embeddings[track_id].append(emb)
-                            if track_id not in self.track_colors:
-                                self.track_colors[track_id] = self.getColor(crop)
+                            crop_h, crop_w = crop.shape[:2]
+                            min_h_size = 80
+                            min_w_size = 150
+                            if crop_w >= min_w_size and crop_h >= min_h_size:
+                                self.save_crop_for_debug(crop)
+                                emb = self.get_embedding(crop)
+                                if emb is not None:
+                                   self.track_embeddings[track_id].append(emb)
+                                if track_id not in self.track_colors:
+                                   self.track_colors[track_id] = self.getColor(crop)
 
                     cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                     cv2.putText(display_frame, f"ID:{track_id}", (x1, y1 - 10),
