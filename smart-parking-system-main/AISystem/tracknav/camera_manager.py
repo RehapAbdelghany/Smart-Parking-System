@@ -3,7 +3,6 @@ import threading
 import cv2
 import time
 import os
-from config import CAMERA_URLS, FRAME_WIDTH, FRAME_HEIGHT
 
 
 class CameraManager:

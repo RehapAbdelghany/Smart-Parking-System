@@ -1,16 +1,18 @@
+import os
 import threading
 import cv2
 import time
 import numpy as np
 import math
 
-from AISystem.tracknav.MultiCameraEngine import MultiCameraEngine
 import cv2
-import time
 
 from AISystem.tracknav.batch import BatchDetectionEngine
-from AISystem.tracknav.camera_manager import get_camera_manager, get_shared_frame
+from AISystem.tracknav.camera_manager import get_shared_frame, get_camera_manager
 from AISystem.tracknav.newTracking import VehicleTracker
+from AISystem.EntranceExitGates.gates.EntranceGate import EntranceGate
+from AISystem.EntranceExitGates.Threads.CameraThread import CameraThread
+from AISystem.EntranceExitGates.Threads.DetectionThread import DetectionThread
 
 def build_dynamic_grid(frames, cell_size=(500, 300)):
     if not frames:
@@ -50,11 +52,9 @@ def create_global_mouse_callback(gates, grid_positions, cell_size):
             if x1 <= x <= x2 and y1 <= y <= y2:
                 gate = gates[idx]
 
-                # 👇 نحول لإحداثيات داخل الكاميرا
                 local_x = int((x - x1))
                 local_y = int((y - y1))
 
-                # ⚠️ مهم: لو الفريم الأصلي مش بنفس الحجم
                 scale_x = gate.original_width / w
                 scale_y = gate.original_height / h
 
@@ -66,25 +66,36 @@ def create_global_mouse_callback(gates, grid_positions, cell_size):
 
     return global_mouse
 
+
 def main():
     get_camera_manager()
-    time.sleep(1)
 
-    gate_ids = [0,1,2,3,4]
+    gate_ids = [3]
 
-    # ✅ create multi-engine (engine per camera)
-    # engine_manager = MultiCameraEngine(
-    #     model_path="yolov8n.pt",
-    #     num_cams=len(gate_ids),
-    #     cameraIds = gate_ids
-    # )
-    engine = BatchDetectionEngine("yolov8n.pt", batch_size=6)
+    engine = BatchDetectionEngine("yolov8n.pt", batch_size=5)
     engine.start()
 
     gates = [
         VehicleTracker(engine, c)
         for c in gate_ids
     ]
+
+
+
+    # entrance_gate = EntranceGate(
+    #     source="../final videos/D01.mp4",
+    #     car_model_path="../Models/car_detection/yolov8m.pt",
+    #     plate_model_path="../Models/plate_detection/best.pt",
+    #     plate_recognition_path="../Models/plate_recognition/best.pt",
+    #     backend_url="http://127.0.0.1:8000/api/entry/"
+    # )
+    # #
+    # ent_cam_thread = CameraThread(entrance_gate)
+    # ent_det_thread = DetectionThread(entrance_gate)
+    # ent_cam_thread.start()
+    # ent_det_thread.start()
+
+
 
 
     window_name = "Smart Parking - Multi-Cam Async"
@@ -97,52 +108,56 @@ def main():
         # نبحث في أي خلية (Camera) وقعت الضغطة
         for idx, (x1, y1, x2, y2) in shared_context["grid_positions"].items():
             if x1 <= x <= x2 and y1 <= y <= y2:
-                gate = gates[idx]
 
-                local_x = x - x1
-                local_y = y - y1
+                # 👇 2. تأمين الضغطة: التأكد إن الخلية تابعة للـ gates العادية مش الـ Entrance
+                if idx < len(gates):
+                    gate = gates[idx]
 
+                    local_x = x - x1
+                    local_y = y - y1
 
-                scale_x = 640 / w
-                scale_y = 360 / h
+                    scale_x = 640 / w
+                    scale_y = 360 / h
 
-                final_x = int(local_x * scale_x)
-                final_y = int(local_y * scale_y)
+                    final_x = int(local_x * scale_x)
+                    final_y = int(local_y * scale_y)
 
-                # إرسال الإحداثيات المصلحة للـ Tracker
-                gate.mouse_callback(event, final_x, final_y, flags, None)
+                    gate.mouse_callback(event, final_x, final_y, flags, None)
                 break
 
     cv2.setMouseCallback(window_name, on_mouse)
 
     try:
         while True:
+
             current_frames = {}
             for gate in gates:
                 data = get_shared_frame(int(gate.camera_id))
                 if data:
                     frame, _ = data
 
-                    # optional resize لتحسين الأداء
                     frame = cv2.resize(frame, (640, 360))
 
-                    current_frames[gate.camera_id] = frame.copy()
-
-
+                    # current_frames[gate.camera_id] = frame.copy()
+                    current_frames[gate.camera_id] = frame
 
             display_list = []
 
             for gate in gates:
                 raw_frame = current_frames.get(gate.camera_id)
+                if raw_frame is not None:
+                    processed = gate.process_frame(raw_frame.copy())
 
-                processed = gate.process_frame(raw_frame.copy())
+                    if processed is not None:
+                        display_list.append(processed)
 
-                if processed is not None:
-                    display_list.append(processed)
-
+            # if entrance_gate.output_frame is not None:
+            #     ent_frame = entrance_gate.output_frame.copy()
+            #     entrance_gate.draw_lines(ent_frame)
+            #     display_list.append(ent_frame)
 
             if display_list:
-                grid, cols, grid_positions = build_dynamic_grid(display_list)
+                grid, cols, grid_positions = build_dynamic_grid(display_list, cell_size)
                 shared_context["grid_positions"] = grid_positions
                 cv2.imshow(window_name, grid)
 
@@ -151,8 +166,9 @@ def main():
                 break
 
     finally:
-        # for eng in engine_manager.engines.values():
-        #     eng.running = False
+        # entrance_gate.running = False
+        # ent_cam_thread.join()
+        # ent_det_thread.join()
 
         cv2.destroyAllWindows()
 

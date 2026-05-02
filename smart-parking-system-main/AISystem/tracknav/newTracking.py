@@ -1,4 +1,6 @@
 import json
+import os
+from datetime import datetime
 
 import cv2
 import torch
@@ -11,7 +13,6 @@ import threading
 from AISystem.APIClient import APIClient
 from AISystem.model_registry import ModelRegistry
 from AISystem.tracknav.camera_manager import get_shared_frame
-from AISystem.tracknav.inference_engine import BatchInferenceEngine
 from AISystem.tracknav.trackpercamera import PerCameraTracker
 
 
@@ -36,22 +37,15 @@ class VehicleTracker:
         self.disappeared_count = defaultdict(int)
         self.engine = engine
         self.MAX_STATIONARY_FRAMES = 60
-        self.max_embeddings_per_track = 3
+        self.max_embeddings_per_track = 5
         if int(self.camera_id) == 2:
             self.max_embeddings_per_track = 1
-
         self.window_name = f"Tracking - {self.camera_id}"
-
-
         ModelRegistry.initialize()
         self.device = ModelRegistry.device
         self.reid_model = ModelRegistry.reid_model
         self.clip_model = ModelRegistry.clip_model
         self.clip_processor = ModelRegistry.clip_processor
-
-        # self.color_model = ModelRegistry.color_model
-
-        # Vehicle classes from YOLO (2: car, 3: motorcycle, 5: bus, 7: truck)
         self.vehicle_classes = [2, 3, 5, 7]
         self.tracker = PerCameraTracker()
 
@@ -65,24 +59,16 @@ class VehicleTracker:
 
         self.color_names = [c.replace("a ", "").replace("an ", "").replace(" car", "").title()
                             for c in self.car_colors]
-
-        # self.tta_transforms = transforms.Compose([
-        #     transforms.RandomHorizontalFlip(p=0.5),
-        #     transforms.ColorJitter(brightness=0.1, contrast=0.1),
-        #     transforms.ToTensor(),
-        #     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        # ])
         self.color_class_names = ['beige', 'black', 'blue', 'brown', 'gold', 'green', 'grey',
                        'orange', 'pink', 'purple', 'red', 'silver', 'tan', 'white', 'yellow']
 
-        # 4. Define Image Preprocessing
-        # This must be identical to your 'val' transforms
         self.color_preprocess = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
+        os.makedirs("embeddings_debug", exist_ok=True)
 
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
@@ -92,7 +78,6 @@ class VehicleTracker:
                                  std=[0.229, 0.224, 0.225]),
         ])
 
-        # State Tracking
         self.track_history = defaultdict(list)
         self.track_embeddings = defaultdict(list)
         self.track_colors = {}
@@ -100,11 +85,7 @@ class VehicleTracker:
         self.finalized_ids = set()
         self.prev_active_ids = set()
         self.frame_count = 0
-
-
-
         self.api = APIClient("http://127.0.0.1:8000/api/tracking/")
-
         self._selected_point = None
 
 
@@ -171,6 +152,7 @@ class VehicleTracker:
         return self.color_names[probs.argmax().item()]
 
     def get_embedding(self, img) -> np.ndarray:
+
         if isinstance(img, np.ndarray):
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         tensor = self.transform(img).unsqueeze(0).to(self.device)
@@ -184,13 +166,8 @@ class VehicleTracker:
     def _finalize_track(self, track_id: int):
         if track_id in self.finalized_ids:
             return
-
         embs = self.track_embeddings.get(track_id)
-
-        # ✅ التغيير: لو مفيش embeddings خالص، حاول تاخد embedding أخير من الـ frame الحالية
         if not embs:
-            print(f"[FINALIZE WARNING] track_id={track_id} has no embeddings, skipping send.")
-            self.finalized_ids.add(track_id)
             return
 
         self.finalized_ids.add(track_id)
@@ -240,101 +217,67 @@ class VehicleTracker:
             return None
 
         self.frame_count += 1
-        self.engine.submit_frame(self.camera_id, frame)
-        results = self.engine.get_result(self.camera_id)
+        self.engine.submit_frame(self.camera_id, frame.copy())
+
+        res_data = self.engine.get_result(self.camera_id)
+
+        if res_data is None:
+            temp_view = frame.copy()
+            self.draw_roi_on_frame(temp_view)
+            return temp_view
+
+        inference_frame, results = res_data
+        display_frame = inference_frame.copy()
 
         current_active_ids = set()
-        if results is None:
-            return frame
-
         detections = self.extract_detections(results)
-        tracks = self.tracker.update(detections, frame)
+        tracks = self.tracker.update(detections, inference_frame)
+
 
         if tracks is not None and len(tracks) > 0:
             for track in tracks:
-                if not track.is_activated:
-                    continue
+                if not track.is_activated: continue
 
                 track_id = track.track_id
                 x1, y1, x2, y2 = map(int, track.tlbr)
+                if track_id in self.finalized_ids: continue
 
-                # إذا تم إنهاء تتبعها مسبقاً، نتجاهلها
-                if track_id in self.finalized_ids:
-                    continue
-
-                # تحقق هل السيارة حالياً داخل الـ ROI؟
-                is_inside = self.is_inside_roi(x1, y1, x2, y2)
-
-                if is_inside:
-                    # --- حالة السيارة داخل الـ ROI ---
+                if self.is_inside_roi(x1, y1, x2, y2):
                     current_active_ids.add(track_id)
                     self.disappeared_count[track_id] = 0
 
-                    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-                    self.track_history[track_id].append((cx, cy))
-
                     under_cap = len(self.track_embeddings[track_id]) < self.max_embeddings_per_track
-                    if under_cap and (len(self.track_embeddings[track_id]) == 0 or self.frame_count % 2 == 0):
-                        x1p, y1p = max(0, x1 ), max(0, y1 )
-                        x2p, y2p = min(frame.shape[1], x2 ), min(frame.shape[0], y2 )
+                    if under_cap and (len(self.track_embeddings[track_id]) == 0 or self.frame_count % 1 == 0):
+                        h, w = inference_frame.shape[:2]
+                        x1p, y1p, x2p, y2p = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
 
+                        crop = inference_frame[y1p:y2p, x1p:x2p].copy()
 
-                        crop = frame[y1p:y2p, x1p:x2p]
+                        if crop is not None and crop.size > 0:
+                            # self.save_crop_for_debug(crop)
+                            emb = self.get_embedding(crop)
+                            if emb is not None:
+                                self.track_embeddings[track_id].append(emb)
+                            if track_id not in self.track_colors:
+                                self.track_colors[track_id] = self.getColor(crop)
 
-                        if crop is None or crop.size == 0:
-                            continue
-                        emb = self.get_embedding(crop)
-                        if emb is not None:
-                            self.track_embeddings[track_id].append(emb)
-                        if track_id not in self.track_colors:
-                           self.track_colors[track_id] = self.getColor(crop)
-                        if len(self.track_embeddings[track_id]) >= self.max_embeddings_per_track:
-                            print(f"[MAX EMB] Vehicle {track_id} reached max embeddings.")
-                            self._finalize_track(track_id)
-
-                    if self.is_currently_stationary(track_id):
-                        self.stationary_counter[track_id] += 1
-                    else:
-                        self.stationary_counter[track_id] = 0
-
-                    # رسم المربع للمركبات داخل الـ ROI فقط
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    cv2.putText(frame, f"ID:{track_id} Embs:{len(self.track_embeddings[track_id])}",
-                                (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-                    if self.stationary_counter.get(track_id, 0) >= self.MAX_STATIONARY_FRAMES:
-                        self._finalize_track(track_id)
-
+                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(display_frame, f"ID:{track_id}", (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                 else:
-
                     if track_id not in current_active_ids:
-                        print(f"[EXIT] Vehicle {track_id} exited ROI area.")
                         self._finalize_track(track_id)
 
-            # معالجة السيارات التي اختفت تماماً من الكاميرا (وليس فقط خرجت من الـ ROI)
             lost_ids = self.prev_active_ids - current_active_ids
-            # for tid in lost_ids:
-            #     self.disappeared_count[tid] += 1
-            #     if self.disappeared_count[tid] >= self.MAX_DISAPPEARED:
-            #         if tid not in self.finalized_ids:
-            #             print(f"[LOST] Vehicle {tid} disappeared from camera view.")
-            #             self._finalize_track(tid)
             for tid in lost_ids:
                 if tid not in self.finalized_ids:
-                    print(f"[LOST/EXIT] Vehicle {tid} lost or exited.")
                     self._finalize_track(tid)
-
-            # تحديث قائمة السيارات النشطة للإطار القادم
             self.prev_active_ids = current_active_ids
 
-            # رسم منطقة الـ ROI والنقاط التفاعلية
-            cv2.polylines(frame, [self.roi_points], True, (255, 0, 0), 3)
-            for i, p in enumerate(self.roi_points):
-                color = (0, 0, 255) if i == self._selected_point else (255, 0, 0)
-                cv2.circle(frame, (int(p[0]), int(p[1])), 8, (255, 255, 255), -1)
-                cv2.circle(frame, (int(p[0]), int(p[1])), 8, color, 2)
+        self.draw_roi_on_frame(display_frame)
 
-            return frame
+        return display_frame
+
     def mouse_callback(self, event, x, y, flags, param):
         self._mouse_callback(event, x, y, flags, param)
 
@@ -343,3 +286,15 @@ class VehicleTracker:
         for track_id, embs in self.track_embeddings.items():
             if embs:
                 print(f"  Track {track_id}: {len(embs)} embeddings | finalized={track_id in self.finalized_ids}")
+
+    def save_crop_for_debug(self,crop_img):
+        timestamp = datetime.now().strftime("%H%M%S_%f")
+        filename = f"embeddings_debug/cam{timestamp}.jpg"
+        cv2.imwrite(filename, crop_img)
+
+    def draw_roi_on_frame(self, frame):
+        cv2.polylines(frame, [self.roi_points], True, (255, 0, 0), 3)
+        for i, p in enumerate(self.roi_points):
+            color = (0, 0, 255) if i == self._selected_point else (255, 0, 0)
+            cv2.circle(frame, (int(p[0]), int(p[1])), 8, (255, 255, 255), -1)
+            cv2.circle(frame, (int(p[0]), int(p[1])), 8, color, 2)

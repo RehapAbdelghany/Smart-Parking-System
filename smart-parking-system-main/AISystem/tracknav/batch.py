@@ -14,13 +14,21 @@ class BatchDetectionEngine(threading.Thread):
         self.lock = threading.Lock()
         self.running = True
 
+    # def submit_frame(self, cam_id, frame):
+    #     if self.input_queue.full():
+    #         try:
+    #             self.input_queue.get_nowait()
+    #         except Empty:
+    #             pass
+    #     self.input_queue.put((cam_id, frame))
+
     def submit_frame(self, cam_id, frame):
         if self.input_queue.full():
             try:
                 self.input_queue.get_nowait()
             except Empty:
                 pass
-        self.input_queue.put((cam_id, frame))
+        self.input_queue.put((cam_id, frame.copy()))
 
     def get_result(self, cam_id):
         with self.lock:
@@ -45,12 +53,12 @@ class BatchDetectionEngine(threading.Thread):
             results = self.model.predict(
                 frames,
                 device=self.device,
-                conf=0.25,
+                conf=0.5,
                 iou=0.6,
                 verbose=False,
                 classes=[2, 3, 5, 7]
             )
 
             with self.lock:
-                for cam_id, res in zip(cam_ids, results):
-                    self.results[cam_id] = res
+                for cam_id, res, f in zip(cam_ids, results, frames):
+                    self.results[cam_id] = (f, res)

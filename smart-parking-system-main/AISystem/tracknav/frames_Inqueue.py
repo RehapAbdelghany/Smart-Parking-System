@@ -1,7 +1,6 @@
 import queue
-from config import CAMERA_URLS
 
 # One unique queue for every AISystem ID
-queues = {i: queue.Queue(maxsize=1) for i in range(len(CAMERA_URLS))}
+queues = {i: queue.Queue(maxsize=1) for i in range(6)}
 # Shared storage for the UI
 processed_results = {}
