@@ -369,7 +369,8 @@ class VehicleTrackingAPIView(APIView):
         queryset = VehicleLog.objects.filter(
             is_inside=True,
             status='moving',
-            last_seen__gte=time_threshold
+            last_seen__gte=time_threshold,
+            car_embedding__isnull=False 
         )
 
         if color_hint and color_hint != 'unknown':
