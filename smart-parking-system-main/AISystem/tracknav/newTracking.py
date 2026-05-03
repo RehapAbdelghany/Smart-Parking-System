@@ -85,7 +85,7 @@ class VehicleTracker:
         self.finalized_ids = set()
         self.prev_active_ids = set()
         self.frame_count = 0
-        self.api = APIClient("http://127.0.0.1:8000/api/tracking/")
+        self.api = APIClient("https://solven.aelanji.cloud/api/tracking/")
         self._selected_point = None
 
 
@@ -212,13 +212,82 @@ class VehicleTracker:
 
         return np.concatenate([xyxy, conf[:, None], cls[:, None]], axis=1)  # (N, 6)
 
+    # def process_frame(self, frame):
+    #     if frame is None:
+    #         return None
+    #
+    #     self.frame_count += 1
+    #     self.engine.submit_frame(self.camera_id, frame.copy())
+    #
+    #     res_data = self.engine.get_result(self.camera_id)
+    #
+    #     if res_data is None:
+    #         temp_view = frame.copy()
+    #         self.draw_roi_on_frame(temp_view)
+    #         return temp_view
+    #
+    #     inference_frame, results = res_data
+    #     display_frame = inference_frame.copy()
+    #
+    #     current_active_ids = set()
+    #     detections = self.extract_detections(results)
+    #     tracks = self.tracker.update(detections, inference_frame)
+    #
+    #
+    #     if tracks is not None and len(tracks) > 0:
+    #         for track in tracks:
+    #             if not track.is_activated: continue
+    #
+    #             track_id = track.track_id
+    #             x1, y1, x2, y2 = map(int, track.tlbr)
+    #             if track_id in self.finalized_ids: continue
+    #
+    #             if self.is_inside_roi(x1, y1, x2, y2):
+    #                 current_active_ids.add(track_id)
+    #                 self.disappeared_count[track_id] = 0
+    #
+    #                 under_cap = len(self.track_embeddings[track_id]) < self.max_embeddings_per_track
+    #                 if under_cap and (len(self.track_embeddings[track_id]) == 0 or self.frame_count % 1 == 0):
+    #                     h, w = inference_frame.shape[:2]
+    #                     x1p, y1p, x2p, y2p = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
+    #
+    #                     crop = inference_frame[y1p:y2p, x1p:x2p].copy()
+    #
+    #
+    #                     if crop is not None and crop.size > 0:
+    #                         crop_h, crop_w = crop.shape[:2]
+    #                         min_h_size = 80
+    #                         min_w_size = 150
+    #                         if crop_w >= min_w_size and crop_h >= min_h_size:
+    #                             # self.save_crop_for_debug(crop)
+    #                             emb = self.get_embedding(crop)
+    #                             if emb is not None:
+    #                                self.track_embeddings[track_id].append(emb)
+    #                             if track_id not in self.track_colors:
+    #                                self.track_colors[track_id] = self.getColor(crop)
+    #
+    #                 cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    #                 cv2.putText(display_frame, f"ID:{track_id}", (x1, y1 - 10),
+    #                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    #             else:
+    #                 if track_id not in current_active_ids:
+    #                     self._finalize_track(track_id)
+    #
+    #         lost_ids = self.prev_active_ids - current_active_ids
+    #         for tid in lost_ids:
+    #             if tid not in self.finalized_ids:
+    #                 self._finalize_track(tid)
+    #         self.prev_active_ids = current_active_ids
+    #
+    #     self.draw_roi_on_frame(display_frame)
+    #
+    #     return display_frame
     def process_frame(self, frame):
         if frame is None:
             return None
 
         self.frame_count += 1
         self.engine.submit_frame(self.camera_id, frame.copy())
-
         res_data = self.engine.get_result(self.camera_id)
 
         if res_data is None:
@@ -233,7 +302,6 @@ class VehicleTracker:
         detections = self.extract_detections(results)
         tracks = self.tracker.update(detections, inference_frame)
 
-
         if tracks is not None and len(tracks) > 0:
             for track in tracks:
                 if not track.is_activated: continue
@@ -242,33 +310,59 @@ class VehicleTracker:
                 x1, y1, x2, y2 = map(int, track.tlbr)
                 if track_id in self.finalized_ids: continue
 
+                # --- MOTION CHECK LOGIC ---
+                # Calculate current centroid
+                centroid = (int((x1 + x2) / 2), int((y1 + y2) / 2))
+
+                # Initialize history if new track
+                if track_id not in self.track_history:
+                    self.track_history[track_id] = []
+
+                self.track_history[track_id].append(centroid)
+
+                # Keep only the last 10 frames of movement history
+                if len(self.track_history[track_id]) > 10:
+                    self.track_history[track_id].pop(0)
+
+                # Calculate displacement (current vs oldest in window)
+                is_moving = False
+                if len(self.track_history[track_id]) > 5:
+                    first_pos = self.track_history[track_id][0]
+                    # Euclidean distance: sqrt((x2-x1)^2 + (y2-y1)^2)
+                    dist = ((centroid[0] - first_pos[0]) ** 2 + (centroid[1] - first_pos[1]) ** 2) ** 0.5
+
+                    # Threshold: 5-10 pixels is usually enough to filter camera jitter/parked cars
+                    if dist > 7:
+                        is_moving = True
+                # ---------------------------
+
                 if self.is_inside_roi(x1, y1, x2, y2):
                     current_active_ids.add(track_id)
                     self.disappeared_count[track_id] = 0
 
+                    # Only take embeddings if the car is actually moving
                     under_cap = len(self.track_embeddings[track_id]) < self.max_embeddings_per_track
-                    if under_cap and (len(self.track_embeddings[track_id]) == 0 or self.frame_count % 1 == 0):
+                    if is_moving and under_cap and (
+                            len(self.track_embeddings[track_id]) == 0 or self.frame_count % 1 == 0):
                         h, w = inference_frame.shape[:2]
                         x1p, y1p, x2p, y2p = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
-
                         crop = inference_frame[y1p:y2p, x1p:x2p].copy()
-
 
                         if crop is not None and crop.size > 0:
                             crop_h, crop_w = crop.shape[:2]
-                            min_h_size = 80
-                            min_w_size = 150
+                            min_h_size, min_w_size = 80, 150
                             if crop_w >= min_w_size and crop_h >= min_h_size:
-                                self.save_crop_for_debug(crop)
                                 emb = self.get_embedding(crop)
                                 if emb is not None:
-                                   self.track_embeddings[track_id].append(emb)
+                                    self.track_embeddings[track_id].append(emb)
                                 if track_id not in self.track_colors:
-                                   self.track_colors[track_id] = self.getColor(crop)
+                                    self.track_colors[track_id] = self.getColor(crop)
 
-                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    cv2.putText(display_frame, f"ID:{track_id}", (x1, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    # Visualization: Color code or label moving vs static
+                    color = (0, 255, 0) if is_moving else (0, 0, 255)  # Green moving, Red static
+                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(display_frame, f"ID:{track_id} {'MOVING' if is_moving else 'STATIC'}",
+                                (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                 else:
                     if track_id not in current_active_ids:
                         self._finalize_track(track_id)
@@ -280,7 +374,6 @@ class VehicleTracker:
             self.prev_active_ids = current_active_ids
 
         self.draw_roi_on_frame(display_frame)
-
         return display_frame
 
     def mouse_callback(self, event, x, y, flags, param):
