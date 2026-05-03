@@ -85,16 +85,7 @@ class _NavigationPageState extends State<NavigationPage>
         _isLoading = true;
         _error = null;
       });
-      final rawData = await _service.fetchNavigation(widget.slotId);
-      // Transform backend coords (A=col0, D=col5) to display coords (D=col0, A=col5)
-      final data = NavigationData(
-        slotNumber: rawData.slotNumber,
-        entrance: Position(row: rawData.entrance.row, col: 5 - rawData.entrance.col),
-        roadStop: Position(row: rawData.roadStop.row, col: 5 - rawData.roadStop.col),
-        destination: Position(row: rawData.destination.row, col: 5 - rawData.destination.col),
-        totalSteps: rawData.totalSteps,
-        path: rawData.path.map((p) => Position(row: p.row, col: 5 - p.col)).toList(),
-      );
+      final data = await _service.fetchNavigation(widget.slotId);
       final keys = <String>{};
       final indexMap = <String, int>{};
       for (int i = 0; i < data.path.length; i++) {
@@ -130,17 +121,9 @@ class _NavigationPageState extends State<NavigationPage>
 
   Future<void> _fetchCarLocation() async {
     if (!mounted || _hasArrived) return;
-    final rawLocation = await _service.fetchCarLocation(widget.licensePlate);
+    final location = await _service.fetchCarLocation(widget.licensePlate);
     if (!mounted) return;
-    if (rawLocation != null) {
-      // Transform backend col to display col
-      final location = CarLocation(
-        licensePlate: rawLocation.licensePlate,
-        row: rawLocation.row,
-        col: 5 - rawLocation.col,
-        zone: rawLocation.zone,
-        lastSeen: rawLocation.lastSeen,
-      );
+    if (location != null) {
       setState(() {
         _carLocation = location;
       });
@@ -225,25 +208,25 @@ class _NavigationPageState extends State<NavigationPage>
     );
   }
 
-  // Get slot name at grid position (DISPLAY layout - matching HTML simulator)
+  // Get slot name at grid position, or null
   String? _getSlotAt(int row, int col) {
-    // D slots: col=0 (LEFT), rows 1-45
-    if (col == 0 && row >= 1 && row <= 45) return 'D$row';
-    // C slots: col=2, rows 2-17
-    if (col == 2 && row >= 2 && row <= 17) return 'C${row - 1}';
-    // B slots: col=3, rows 2-17
-    if (col == 3 && row >= 2 && row <= 17) return 'B${row - 1}';
-    // A slots: col=5 (RIGHT), rows 1-50
-    if (col == 5 && row >= 1 && row <= 50) return 'A$row';
+    // A slots: col=0, rows 1-50
+    if (col == 0 && row >= 1 && row <= 50) return 'A$row';
+    // B slots: col=2, rows 2-21
+    if (col == 2 && row >= 2 && row <= 21) return 'B${row - 1}';
+    // C slots: col=3, rows 2-21
+    if (col == 3 && row >= 2 && row <= 21) return 'C${row - 1}';
+    // D slots: col=5, rows 1-45
+    if (col == 5 && row >= 1 && row <= 45) return 'D$row';
     return null;
   }
 
-  // Is this a road cell? (DISPLAY layout)
+  // Is this a road cell?
   bool _isRoadCell(int row, int col) {
-    if (row == 0 && col == 4) return true; // ENTER (top-right road)
-    if (row == 51 && col == 4) return true; // EXIT (bottom-right road)
-    if (col == 4 && row >= 1 && row <= 50) return true; // Right lane
+    if (row == 0 && col == 1) return true; // ENTER
+    if (row == 51 && col == 1) return true; // EXIT
     if (col == 1 && row >= 1 && row <= 50) return true; // Left lane
+    if (col == 4 && row >= 1 && row <= 50) return true; // Right lane
     if (row == 1 && (col == 2 || col == 3)) return true; // Top connector
     if (row == 50 && (col == 2 || col == 3)) return true; // Bottom connector
     return false;
@@ -504,7 +487,7 @@ class _NavigationPageState extends State<NavigationPage>
   }
 
   Widget _buildColumnHeaders(ThemeData theme) {
-    const headers = ['D', 'Road', 'C', 'B', 'Road', 'A'];
+    const headers = ['A', 'Road', 'B', 'C', 'Road', 'D'];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
@@ -597,13 +580,13 @@ class _NavigationPageState extends State<NavigationPage>
     Widget? content;
     List<BoxShadow>? shadows;
 
-    if (row == 0 && col == 4) {
-      // ENTER (top-right)
+    if (row == 0 && col == 1) {
+      // ENTER
       bgColor = const Color(0xFF14C8A1).withOpacity(0.3);
       borderColor = const Color(0xFF14C8A1);
       content = const Icon(Icons.login, size: 12, color: Color(0xFF14C8A1));
-    } else if (row == 51 && col == 4) {
-      // EXIT (bottom-right)
+    } else if (row == 51 && col == 1) {
+      // EXIT
       bgColor = Colors.red.withOpacity(0.2);
       borderColor = Colors.red.withOpacity(0.5);
       content = const Icon(Icons.logout, size: 12, color: Colors.red);

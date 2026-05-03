@@ -552,11 +552,11 @@ class _ParkingPageState extends State<ParkingPage> with WidgetsBindingObserver {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(child: _buildSlotColumn(colD, provider, isLeftSkew: true)),
+                              Expanded(child: _buildSlotColumn(colB, provider, isLeftSkew: true)),
                               ParkingLane(arrowCount: laneArrowCount),
                               Expanded(child: _buildSlotColumn(colC, provider, isLeftSkew: false)),
                               const SizedBox(width: 4),
-                              Expanded(child: _buildSlotColumn(colB, provider, isLeftSkew: true)),
+                              Expanded(child: _buildSlotColumn(colD, provider, isLeftSkew: true)),
                               ParkingLane(arrowCount: laneArrowCount),
                               Expanded(child: _buildSlotColumn(colA, provider, isLeftSkew: false)),
                             ],

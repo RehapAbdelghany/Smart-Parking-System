@@ -14,7 +14,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'fallback-secret-key')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 CAMERA_SECRET_KEY = os.getenv('CAMERA_SECRET_KEY')
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ['*']
 
 # ===== APPS =====
 INSTALLED_APPS = [
@@ -67,12 +67,12 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # ===== DATABASE (single — reads from .env) =====
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME', 'smart_parking_db'),
-        'USER': os.getenv('DB_USER', 'postgres'),
-        'PASSWORD': os.getenv('DB_PASSWORD', '0000'),
-        'HOST': os.getenv('DB_HOST', '127.0.0.1'),
-        'PORT': os.getenv('DB_PORT', '5432'),
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': 'smart_parking',   
+            'USER': 'postgres',    
+            'PASSWORD': '1234',    
+            'HOST': '127.0.0.1',            # لأنها على جهازك حالياً
+            'PORT': '5432',                 # بورت البوستجرس الافتراضي
     }
 }
 
@@ -92,16 +92,19 @@ SIMPLE_JWT = {
 # ===== REST FRAMEWORK =====
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.SessionAuthentication',  # ← required for admin dashboard
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+
+    
 }
 
 # ===== INTERNATIONALIZATION =====
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Africa/Cairo'
 USE_I18N = True
 USE_TZ = True
 
@@ -117,4 +120,3 @@ CORS_ALLOW_ALL_ORIGINS = True
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  
 
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
-
